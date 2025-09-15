@@ -1,0 +1,70 @@
+# -*- coding: utf-8 -*-
+"""
+트레이딩 시스템 설정 파일
+"""
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class TradingConfig:
+    """트레이딩 시스템 설정 클래스"""
+    def __init__(self):
+        # 로그 레벨 (DEBUG, INFO, WARNING, ERROR)
+        self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+        
+        # 데이터 수집 간격 (초)
+        self.DATA_COLLECTION_INTERVAL = int(os.getenv('DATA_COLLECTION_INTERVAL', 300))
+        
+        # 백테스트 모드 (True/False)
+        self.BACKTEST_MODE = os.getenv('BACKTEST_MODE', 'false').lower() == 'true'
+
+        # 기본 설정
+        self.INITIAL_BALANCE = float(os.getenv('INITIAL_BALANCE', 100000))
+        self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', 0.15))
+        self.REBALANCING_THRESHOLD = float(os.getenv('REBALANCING_THRESHOLD', 0.05))
+
+        # API 키 설정
+        self.TWITTER_BEARER_TOKEN = os.getenv('TWITTER_BEARER_TOKEN')
+        self.REDDIT_CLIENT_ID = os.getenv('REDDIT_CLIENT_ID')
+        self.REDDIT_CLIENT_SECRET = os.getenv('REDDIT_CLIENT_SECRET')
+        self.UPBIT_ACCESS_KEY = os.getenv('UPBIT_ACCESS_KEY')
+        self.UPBIT_SECRET_KEY = os.getenv('UPBIT_SECRET_KEY')
+
+        # 알림 설정
+        self.TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+        self.TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+        self.EMAIL_SETTINGS = {
+            'smtp_server': os.getenv('EMAIL_SMTP_SERVER'),
+            'smtp_port': int(os.getenv('EMAIL_SMTP_PORT', 587)),
+            'email': os.getenv('EMAIL_ADDRESS'),
+            'password': os.getenv('EMAIL_PASSWORD'),
+            'recipient': os.getenv('EMAIL_RECIPIENT')
+        }
+
+        # 지원 코인 설정
+        self.SUPPORTED_COINS = [
+            'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
+            'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
+        ]
+
+        # 포트폴리오 목표 배분
+        self.TARGET_ALLOCATION = {
+            'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
+            'DOGE': 0.05, 'SOL': 0.05, 'CASH': 0.30
+        }
+
+        # 센티멘트 분석 설정
+        self.SENTIMENT_CONFIG = {
+            'twitter_max_tweets': 100,
+            'reddit_max_posts': 50,
+            'sentiment_threshold': 0.3,
+            'cache_timeout': 300
+        }
+        
+        # 거래 전략 설정
+        self.TRADING_CONFIG = {
+            'buy_threshold': 0.6, 'sell_threshold': 0.6,
+            'min_trade_amount': 10000, 'max_slippage': 0.02,
+            'stop_loss': 0.05, 'take_profit': 0.10
+        }
