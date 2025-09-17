@@ -4,8 +4,10 @@
 """
 import os
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class TradingConfig:
     """트레이딩 시스템 설정 클래스"""
@@ -46,8 +48,6 @@ class TradingConfig:
         self.SUPPORTED_COINS = [
             'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
             'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
-        ]
-
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
             'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
@@ -66,5 +66,33 @@ class TradingConfig:
         self.TRADING_CONFIG = {
             'buy_threshold': 0.6, 'sell_threshold': 0.6,
             'min_trade_amount': 10000, 'max_slippage': 0.02,
-            'stop_loss': 0.05, 'take_profit': 0.10
+            'stop_loss': 0.05, 'take_profit': 0.10,
+            'transaction_fee_percent': 0.001  # 거래 수수료 (0.1%)
         }
+
+        self._validate_config()
+
+    def _validate_config(self):
+        """설정 값의 유효성을 검사합니다."""
+        # 1. 포트폴리오 목표 배분 합계 검증
+        total_allocation = sum(self.TARGET_ALLOCATION.values())
+        if not (0.999 < total_allocation < 1.001): # 부동소수점 오차 감안
+            raise ValueError(f"포트폴리오 목표 배분의 총합이 1이 아닙니다: {total_allocation}")
+
+        # 2. 목표 배분 코인이 지원 코인 목록에 있는지 확인
+        for coin in self.TARGET_ALLOCATION:
+            if coin != 'CASH' and coin not in self.SUPPORTED_COINS:
+                raise ValueError(f"목표 배분에 포함된 '{coin}'은(는) 지원하는 코인이 아닙니다.")
+
+        # 3. 지원하지만 목표 배분에 없는 코인에 대해 경고
+        unallocated_coins = [
+            coin for coin in self.SUPPORTED_COINS
+            if coin not in self.TARGET_ALLOCATION
+        ]
+        if unallocated_coins:
+            logger.warning(
+                f"다음 코인은 지원되지만 목표 배분이 설정되지 않았습니다: {', '.join(unallocated_coins)}"
+            )
+
+        logger.info("✅ 설정 파일 유효성 검사 완료")
+

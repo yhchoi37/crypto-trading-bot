@@ -17,14 +17,6 @@ from src.notifications import NotificationManager
 import logging
 
 # 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/trading.log', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
 logger = logging.getLogger(__name__)
 
 class TradingBot:
@@ -39,6 +31,10 @@ class TradingBot:
 
     def setup_logging(self):
         numeric_level = getattr(logging, self.config.LOG_LEVEL, logging.INFO)
+        # 기본 로거 설정, 이전 핸들러 제거
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+
         logging.basicConfig(
             level=numeric_level,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -53,7 +49,7 @@ class TradingBot:
     def initialize(self):
         """시스템 초기화"""
         try:
-            logger.info("🚀 트레이딩 시스템 초기화 중...")
+            self.logger.info("🚀 트레이딩 시스템 초기화 중...")
             # 디렉토리 생성
             os.makedirs('logs', exist_ok=True)
             os.makedirs('data', exist_ok=True)
@@ -73,10 +69,10 @@ class TradingBot:
                 email_settings=self.config.EMAIL_SETTINGS
             )
             self.setup_schedule()
-            logger.info("✅ 시스템 초기화 완료")
+            self.logger.info("✅ 시스템 초기화 완료")
             return True
         except Exception as e:
-            logger.error(f"❌ 시스템 초기화 실패: {e}")
+            self.logger.error(f"❌ 시스템 초기화 실패: {e}", exc_info=True)
             return False
 
     def setup_schedule(self):
@@ -89,34 +85,35 @@ class TradingBot:
         schedule.every().day.at("18:00").do(self.send_daily_report)
         # 매일 00:00 데이터 백업
         schedule.every().day.at("00:00").do(self.backup_data)
-        logger.info("📅 거래 스케줄 설정 완료")
+        self.logger.info("📅 거래 스케줄 설정 완료")
 
     def run_trading_cycle(self):
         """거래 사이클 실행"""
         try:
-            logger.info("🔄 거래 사이클 시작")
+            self.logger.info("🔄 거래 사이클 시작")
             result = self.trading_system.run_trading_cycle()
             if result['active_signals']:
                 message = f"🚨 거래 신호 알림\n활성 신호: {len(result['active_signals'])}개\n"
                 for signal in result['active_signals'][:3]:
                     message += f"{signal['coin']}: {signal['decision']['action']} (강도: {signal['decision']['strength']:.2f})\n"
                 self.notification_manager.send_alert(message, "TRADING_SIGNAL")
-            logger.info(f"✅ 거래 사이클 완료 - 포트폴리오 가치: ${result['portfolio_value']:,.2f}")
+            self.logger.info(f"✅ 거래 사이클 완료 - 포트폴리오 가치: ${result['portfolio_value']:,.2f}")
         except Exception as e:
-            logger.error(f"❌ 거래 사이클 실패: {e}")
-            self.notification_manager.send_alert(f"거래 사이클 오류: {e}", "ERROR")
+            self.logger.error(f"❌ 거래 사이클 실패: {e}", exc_info=True)
+        if self.notification_manager:
+                self.notification_manager.send_alert(f"거래 사이클 오류: {e}", "ERROR")
 
     def run_rebalancing(self):
         """포트폴리오 리밸런싱"""
-        try:
-            logger.info("⚖️ 포트폴리오 리밸런싱 실행")
+    try:
+            self.logger.info("⚖️ 포트폴리오 리밸런싱 실행")
             prices = self.trading_system.data_manager.get_coin_prices()
             self.trading_system.perform_rebalancing(prices)
             portfolio_value = self.trading_system.portfolio_manager.get_portfolio_value(prices)
             message = f"⚖️ 리밸런싱 완료\n포트폴리오 가치: ${portfolio_value:,.2f}"
             self.notification_manager.send_alert(message, "REBALANCING")
-        except Exception as e:
-            logger.error(f"❌ 리밸런싱 실패: {e}")
+    except Exception as e:
+            self.logger.error(f"❌ 리밸런싱 실패: {e}", exc_info=True)
 
     def send_daily_report(self):
         """일일 성과 리포트 전송"""
@@ -129,12 +126,12 @@ class TradingBot:
                       f"- 총 가치: ${metrics['total_value']:,.2f}\n"
                       f"- 총 수익률: {metrics['total_return']:+.2f}%\n"
                       f"- 현금 잔고: ${metrics['cash_balance']:,.2f}\n"
-                      f"📈 오늘 거래 수: {metrics['trades_today']}\n"
-                      f"🏷️ 보유 포지션 수: {metrics['total_positions']}")
+                      f"📈 오늘 거래 수: {metrics['trades_today'}\n"
+                      f"🏷️ 보유 포지션 수: {metrics['total_positions'}")
             self.notification_manager.send_alert(report, "DAILY_REPORT")
-            logger.info("📧 일일 리포트 전송 완료")
+            self.logger.info("📧 일일 리포트 전송 완료")
         except Exception as e:
-            logger.error(f"❌ 일일 리포트 생성 실패: {e}")
+            self.logger.error(f"❌ 일일 리포트 생성 실패: {e}", exc_info=True)
 
     def backup_data(self):
         """데이터 백업"""
@@ -142,38 +139,42 @@ class TradingBot:
             filename = self.trading_system.portfolio_manager.export_trade_history(
                 f"backups/trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             )
-            logger.info(f"💾 데이터 백업 완료: {filename}")
+            self.logger.info(f"💾 데이터 백업 완료: {filename}")
         except Exception as e:
-            logger.error(f"❌ 데이터 백업 실패: {e}")
+            self.logger.error(f"❌ 데이터 백업 실패: {e}", exc_info=True)
 
     def start(self):
         """봇 시작"""
         if not self.initialize():
             return False
         self.is_running = True
-        logger.info("🎯 트레이딩 봇 시작!")
+        self.logger.info("🎯 트레이딩 봇 시작!")
         self.notification_manager.send_alert(
             f"🚀 트레이딩 봇이 시작되었습니다!\n초기 자본: ${self.config.INITIAL_BALANCE:,.2f}",
             "BOT_START"
         )
         try:
+            # 시작 시 한 번 즉시 실행
+            self.run_trading_cycle()
             while self.is_running:
                 schedule.run_pending()
-                time.sleep(self.config.DATA_COLLECTION_INTERVAL)
+                time.sleep(1) # CPU 사용량을 줄이기 위해 짧은 sleep 추가
         except KeyboardInterrupt:
-            logger.info("⏹️ 사용자에 의해 중지되었습니다")
-            self.stop()
+            self.logger.info("⏹️ 사용자에 의해 중지되었습니다")
         except Exception as e:
-            logger.error(f"❌ 시스템 오류: {e}")
-            self.notification_manager.send_alert(f"시스템 오류로 봇이 중지되었습니다: {e}", "ERROR")
+            self.logger.critical(f"❌ 시스템 심각한 오류: {e}", exc_info=True)
+            if self.notification_manager:
+                self.notification_manager.send_alert(f"시스템 오류로 봇이 중지되었습니다: {e}", "ERROR")
+        finally:
             self.stop()
 
     def stop(self):
         """봇 중지"""
-        self.is_running = False
-        if self.notification_manager:
-            self.notification_manager.send_alert("⏹️ 트레이딩 봇이 중지되었습니다", "BOT_STOP")
-        logger.info("🛑 트레이딩 봇이 중지되었습니다")
+        if self.is_running:
+            self.is_running = False
+            if self.notification_manager:
+                self.notification_manager.send_alert("⏹️ 트레이딩 봇이 중지되었습니다", "BOT_STOP")
+            self.logger.info("🛑 트레이딩 봇이 중지되었습니다")
 
 def main():
     """메인 함수"""
@@ -183,10 +184,11 @@ def main():
     try:
         bot.start()
     except Exception as e:
-        logger.error(f"❌ 봇 실행 중 오류: {e}")
+        logger.error(f"❌ 봇 실행 중 치명적인 오류 발생: {e}", exc_info=True)
         return 1
     return 0
 
 if __name__ == "__main__":
     sys.exit(main())
+```
 
