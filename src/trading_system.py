@@ -38,45 +38,43 @@ class TechnicalAnalysisAlgorithm:
         # --- 모든 필요한 지표를 한 번에 계산 ---
         # MA (short, long), RSI는 양쪽에서 모두 사용할 수 있으므로 미리 계산
         if any('MA' in ind or 'Dead' in ind for ind in buy_combo + sell_combo):
-            df.ta.sma(length=params['ma_short_period'], append=True)
+            df.ta.sma(length=params['ma_short_period', append=True)
             df.ta.sma(length=params['ma_long_period'], append=True)
         if any('RSI' in ind for ind in buy_combo + sell_combo):
             df.ta.rsi(length=params['rsi_period'], append=True)
+
+        # 데이터가 충분하지 않아 지표 계산이 안된 경우를 대비
+        if df.empty or len(df) < 2:
+        return {'action': 'HOLD', 'strength': 0}
 
         latest = df.iloc[-1]
         previous = df.iloc[-2]
 
         # --- 매수 신호 점수 계산 ---
         if 'MA_Cross' in buy_combo:
-
-
-
-            # 오류 수정: f-string 따옴표 및 if 조건식
             ma_short_col = f"SMA_{params['ma_short_period']}"
-            ma_long_col = f"SMA_{params['ma_long_period'}"
-            if latest[ma_short_col] > latest[ma_long_col] and previous[ma_short_col] <= previous[ma_long_col:
-                buy_score += weights['MA_Cross_buy']
+            ma_long_col = f"SMA_{params['ma_long_period']}"
+            # NaN 값 체크 추가
+            if pd.notna(latest[ma_short_col]) and pd.notna(latest[ma_long_col]) and \
+               pd.notna(previous[ma_short_col]) and pd.notna(previous[ma_long_col]):
+                if latest[ma_short_col] > latest[ma_long_col] and previous[ma_short_col] <= previous[ma_long_col]:
+                    buy_score += weights['MA_Cross_buy']
         if 'RSI' in buy_combo:
-
             rsi_col = f"RSI_{params['rsi_period']}"
-            if latest[rsi_col] < params['rsi_oversold_threshold']:
+            if pd.notna(latest[rsi_col]) and latest[rsi_col < params['rsi_oversold_threshold']:
                 buy_score += weights['RSI_buy']
 
         # --- 매도 신호 점수 계산 ---
         if 'Dead_Cross' in sell_combo:
-
-
-
-
-            # 오류 수정: f-string 따옴표 및 if 조건식
             ma_short_col = f"SMA_{params['ma_short_period']}"
             ma_long_col = f"SMA_{params['ma_long_period']}"
-            if latest[ma_short_col] < latest[ma_long_col] and previous[ma_short_col] >= previous[ma_long_col]:
-                sell_score += weights['Dead_Cross_sell'
+            if pd.notna(latest[ma_short_col]) and pd.notna(latest[ma_long_col]) and \
+               pd.notna(previous[ma_short_col]) and pd.notna(previous[ma_long_col]):
+                if latest[ma_short_col] < latest[ma_long_col] and previous[ma_short_col] >= previous[ma_long_col]:
+                    sell_score += weights['Dead_Cross_sell']
         if 'RSI_Sell' in sell_combo:
-
             rsi_col = f"RSI_{params['rsi_period']}"
-            if latest[rsi_col] > params['rsi_overbought_threshold']:
+            if pd.notna(latest[rsi_col]) and latest[rsi_col] > params['rsi_overbought_threshold']:
                 sell_score += weights['RSI_Sell_sell']
 
         # --- 최종 결정 (매도 신호 우선) ---
@@ -137,7 +135,7 @@ class MultiCoinTradingSystem:
         if self.config.BACKTEST_MODE and job_config:
             tech_algo_info = self.algorithms.get('technical_analysis')
             if tech_algo_info and coin in tech_algo_info['enabled_coins']:
-                algo = tech_algo_info['algorithm']
+                algo = tech_algo_info['algorithm'
                 return {'decision': algo.generate_signal(data, job_config)}
         return {'decision': {'action': 'HOLD', 'strength': 0}}
 
@@ -146,21 +144,22 @@ class MultiCoinTradingSystem:
         logger.info(f"🔄 거래 사이클 시작 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         # TARGET_ALLOCATION에 설정된 코인 목록을 가져옴 (CASH 제외)
-        coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH']
+        coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH'
         current_prices = self.data_manager.get_coin_prices(coins)
         
         active_signals = []
 
         # 모든 코인 데이터를 한 번에 가져오도록 수정
-        all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=7)
+        all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=30) # 백테스팅과 유사하게 데이터 기간 확보
 
         for coin in coins:
             if all_coin_data.empty:
                 logger.warning(f"{coin}에 대한 데이터를 가져올 수 없습니다.")
                 continue
-
+            # 오류 수정: 닫는 괄호 추가
             coin_data = all_coin_data[all_coin_data['coin'] == coin]
             if not coin_data.empty:
+                # 실시간 거래에서는 기본 파라미터로 신호 분석 (job_config 없음)
                 analysis = self.analyze_coin_signals(coin, coin_data)
 
                 if analysis['decision']['action'] != 'HOLD':
