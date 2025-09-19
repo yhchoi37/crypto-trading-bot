@@ -47,7 +47,7 @@ class MultiCoinDataManager:
             if isinstance(all_ticker_data, dict):
                 for ticker, price in all_ticker_data.items():
                     symbol = ticker.split('-')[1]
-                prices[symbol] = price
+                    prices[symbol = price
             else: # 단일 코인 조회 시 float 반환 대응
                 if len(coins) == 1 and isinstance(all_ticker_data, (int, float)):
                     prices[coins[0]] = all_ticker_data
@@ -64,7 +64,7 @@ class MultiCoinDataManager:
                 except Exception as e_ind:
                     logger.error(f"[Upbit] {symbol} 가격 조회 에러: {e_ind}")
         if prices:
-            self._cache[cache_key] = prices
+            self._cache[cache_key = prices
             self._last_updated[cache_key] = time.time()
             logger.info(f"{len(prices)}개 코인 가격 정보 업데이트 완료")
 
@@ -98,19 +98,32 @@ class MultiCoinDataManager:
         return result_df
 
     def get_historical_data_for_backtest(self, coins, start_date, end_date):
-        """백테스트용 과거 데이터 반환 (코인별로 병합)"""
+        """백테스트용 과거 데이터 반환 (긴 기간에 대해 나눠서 요청)"""
         all_data = []
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+
         for symbol in coins:
+            logger.info(f"'{symbol}'의 과거 데이터 수집 중 ({start_date} ~ {end_date})...")
             try:
-                df = pyupbit.get_ohlcv(f"KRW-{symbol}", interval="day")
-                df = df.loc[start_date:end_date]
-                df = df.reset_index()
+                df = pyupbit.get_ohlcv(
+                    f"KRW-{symbol}",
+                    interval="day",
+                    to=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
+                    count=(end_dt - start_dt).days + 1
+                )
+                if df is not None:
+                    # pyupbit이 end_date를 포함하여 count만큼 가져오므로, start_date 이전 데이터는 필터링
+                    df = df[df.index >= start_dt
+                    df = df.reset_index()
                 df['coin'] = symbol
                 all_data.append(df)
+                time.sleep(0.2) # Rate limit 방지
             except Exception as e:
                 logger.error(f"[{symbol}] 백테스트 데이터 수집 에러: {e}")
-        if all_data:
-            return pd.concat(all_data, ignore_index=True)
+        if not all_data:
         return pd.DataFrame()
+
+        return pd.concat(all_data, ignore_index=True)
 ```
 

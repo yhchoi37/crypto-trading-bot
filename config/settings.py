@@ -48,6 +48,7 @@ class TradingConfig:
         self.SUPPORTED_COINS = [
             'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
             'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
+
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
             'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
@@ -66,8 +67,33 @@ class TradingConfig:
         self.TRADING_CONFIG = {
             'buy_threshold': 0.6, 'sell_threshold': 0.6,
             'min_trade_amount': 10000, 'max_slippage': 0.02,
-            'stop_loss': 0.05, 'take_profit': 0.10,
-            'transaction_fee_percent': 0.001  # 거래 수수료 (0.1%)
+            'stop_loss_percent': 0.05,   # 5% 손실 시 손절
+            'take_profit_percent': 0.10, # 10% 이익 시 익절
+            'transaction_fee_percent': 0.001
+        }
+
+        # 기술적 분석 설정
+        self.TECHNICAL_ANALYSIS_CONFIG = {
+            'ma_short_period': 5,
+            'ma_long_period': 20,
+            'rsi_period': 14,
+            'bollinger_window': 20,
+            'bollinger_std_dev': 2,
+
+            'buy_signal_weights': {
+                'golden_cross': 1,
+                'rsi_oversold': 1,
+                'bb_lower': 2,
+            },
+            'sell_signal_weights': {
+                'dead_cross': 1,
+                'rsi_overbought_weak': 1,  # RSI 70 이상
+                'rsi_overbought_strong': 2, # RSI 80 이상
+                'bb_upper': 2,
+            },
+
+            'buy_trigger_threshold': 2,
+            'sell_trigger_threshold': 3
         }
 
         self._validate_config()
