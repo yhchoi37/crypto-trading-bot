@@ -28,6 +28,74 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class BacktestRunner:
+    """단일 전략 조합으로 백테스팅을 수행하고 결과를 반환하는 클래스"""
+    def __init__(self, initial_balance: float, historical_data: pd.DataFrame, config: TradingConfig):
+        self.initial_balance = initial_balance
+        self.historical_data = historical_data
+        self.config = config
+        
+    def run(self, job_config: dict) -> dict:
+        trading_system = MultiCoinTradingSystem(initial_balance=self.initial_balance)
+        portfolio_history = []
+        data_by_date = {date: group for date, group in self.historical_data.groupby('date')}
+        target_allocations = self.config.TARGET_ALLOCATION
+
+        for current_date in sorted(data_by_date.keys()):
+            current_prices = {row['coin': row['close'] for _, row in data_by_date[current_date].iterrows()}
+                trading_system.portfolio_manager.check_risk_management(current_prices)
+                portfolio_value = trading_system.portfolio_manager.get_portfolio_value(current_prices)
+            current_allocations = trading_system.portfolio_manager.get_current_allocation(current_prices)
+
+            for coin in [c for c in target_allocations if c != 'CASH']:
+                coin_history_until_today = self.historical_data[
+                    (self.historical_data['coin'] == coin) & (self.historical_data['date'] <= current_date)
+                ]
+                if coin_history_until_today.empty:
+                    continue
+
+                analysis = trading_system.analyze_coin_signals(coin, coin_history_until_today, job_config)
+                decision = analysis['decision']
+                    price = current_prices.get(coin)
+
+                if not price:
+                    continue
+
+                if decision['action'] == 'BUY':
+                    if current_allocations.get(coin, 0) < target_allocations.get(coin, 0):
+                        amount_to_invest = min(
+                            (target_allocations.get(coin, 0) - current_allocations.get(coin, 0)) * portfolio_value,
+                            trading_system.portfolio_manager.cash * 0.1
+                        )
+                        if amount_to_invest > 10000:
+                           trading_system.portfolio_manager.execute_trade(coin, 'BUY', amount_to_invest / price, price)
+
+                elif decision['action'] == 'SELL':
+                    position = trading_system.portfolio_manager.coins.get(coin)
+                    if position and position['quantity'] > 0:
+                        # 보유 수량의 절반을 매도
+                        quantity_to_sell = position['quantity'] * 0.5
+                        trading_system.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
+
+            portfolio_value = trading_system.portfolio_manager.get_portfolio_value(current_prices)
+            portfolio_history.append({'date': current_date, 'portfolio_value': portfolio_value})
+
+        return self._analyze_results(portfolio_history)
+
+    def _analyze_results(self, portfolio_history: list) -> dict:
+        if not portfolio_history:
+            return {'total_return': -100, 'mdd': -100, 'final_value': 0, 'history': None}
+
+        results_df = pd.DataFrame(portfolio_history).set_index('date')
+        final_value = results_df['portfolio_value'].iloc[-1]
+        total_return = (final_value / self.initial_balance - 1) * 100
+        peak = results_df['portfolio_value'].cummax()
+        drawdown = (results_df['portfolio_value'] - peak) / peak
+        mdd = drawdown.min() * 100
+
+        return {'total_return': total_return, 'mdd': mdd, 'final_value': final_value, 'history': results_df}
+
+
 class Optimizer:
     """전략 파라미터 최적화를 총괄하는 클래스"""
     def __init__(self, start_date: str, end_date: str, initial_balance: float):
@@ -48,43 +116,67 @@ class Optimizer:
         """min, max, step 설정으로부터 파라미터 값 리스트 생성"""
         param_values = {}
         for name, config in params_config.items():
-            param_values[name] = list(np.arange(config['min', config['max'] + config['step'], config['step']))
+            param_values[name] = list(np.arange(config['min'], config['max'] + config['step'], config['step'))
         return param_values
 
     def _generate_jobs(self) -> list:
-        """최적화를 위한 모든 테스트 '잡(Job)' 생성"""
+        """최적화를 위한 모든 테스트 '잡(Job)' 생성 (매수/매도 조합)"""
         jobs = []
         cfg = self.config.OPTIMIZATION_CONFIG
 
-        # 1. 사용할 지표의 모든 조합 생성 (A, B, C, AB, AC, BC, ABC)
-        indicator_names = list(cfg['indicators'].keys())
-        indicator_combos = []
-        for i in range(1, len(indicator_names) + 1):
-            indicator_combos.extend(itertools.combinations(indicator_names, i))
+        # 1. 매수 전략 조합 생성
+        buy_indicator_names = list(cfg['buy_indicators'].keys())
+        buy_combos = []
+        for i in range(1, len(buy_indicator_names) + 1):
+            buy_combos.extend(itertools.combinations(buy_indicator_names, i))
 
-        # 2. 각 지표 조합별로 파라미터 조합 생성
-        for combo in indicator_combos:
-            combo_param_configs = {name: cfg['indicators'][name] for name in combo}
+        # 2. 매도 전략 조합 생성
+        sell_indicator_names = list(cfg['sell_indicators'].keys())
+        sell_combos = []
+        for i in range(1, len(sell_indicator_names) + 1):
+            sell_combos.extend(itertools.combinations(sell_indicator_names, i))
 
-            param_names = []
-            param_value_lists = []
-            for ind_name, ind_params in combo_param_configs.items():
-                space = self._generate_param_space(ind_params)
-                for p_name, p_values in space.items():
-                    param_names.append(p_name)
-                    param_value_lists.append(p_values)
+        # 3. 매수/매도 전략 조합에 대한 모든 파라미터 조합 생성
+        for buy_combo in buy_combos:
+            for sell_combo in sell_combos:
+                # 파라미터 이름 및 값 목록 준비
+                param_names = []
+                param_value_lists = []
 
-            # 3. 매수 트리거 값 범위 추가
-            buy_trigger_space = self._generate_param_space({'buy_trigger_threshold': cfg['buy_trigger_threshold']})
-            param_names.append('buy_trigger_threshold')
-            param_value_lists.append(buy_trigger_space['buy_trigger_threshold'])
+                # 매수 파라미터 추가
+                for ind_name in buy_combo:
+                    space = self._generate_param_space(cfg['buy_indicators'[ind_name)
+                    for p_name, p_values in space.items():
+                        if p_name not in param_names: # 중복 파라미터 방지
+                            param_names.append(p_name)
+                            param_value_lists.append(p_values)
 
-            # 4. 모든 파라미터 조합 생성 (Cartesian Product)
-            for param_values in itertools.product(*param_value_lists):
-                params = dict(zip(param_names, param_values))
-                params['weights'] = cfg['signal_weights'] # 고정 가중치 추가
-                jobs.append({'indicator_combo': combo, 'params': params})
+                # 매도 파라미터 추가
+                for ind_name in sell_combo:
+                    space = self._generate_param_space(cfg['sell_indicators'][ind_name])
+                    for p_name, p_values in space.items():
+                        if p_name not in param_names: # 중복 파라미터 방지
+                           param_names.append(p_name)
+                           param_value_lists.append(p_values)
 
+                # 트리거 값 범위 추가
+                buy_trigger_space = self._generate_param_space({'buy_trigger_threshold': cfg['buy_trigger_threshold']})
+                param_names.append('buy_trigger_threshold')
+                param_value_lists.append(buy_trigger_space['buy_trigger_threshold')
+
+                sell_trigger_space = self._generate_param_space({'sell_trigger_threshold': cfg['sell_trigger_threshold']})
+                param_names.append('sell_trigger_threshold')
+                param_value_lists.append(sell_trigger_space['sell_trigger_threshold'])
+
+                # 모든 파라미터 조합 생성
+                for param_values in itertools.product(*param_value_lists):
+                    params = dict(zip(param_names, param_values))
+                    params['weights'] = {**cfg['buy_signal_weights'], **cfg['sell_signal_weights']}
+                    jobs.append({
+                        'buy_indicator_combo': buy_combo,
+                        'sell_indicator_combo': sell_combo,
+                        'params': params
+                    })
         return jobs
 
     def run_optimization(self):
@@ -105,68 +197,14 @@ class Optimizer:
         jobs = self._generate_jobs()
         logger.info(f"총 {len(jobs)}개의 전략 조합으로 최적화를 시작합니다.")
 
+        backtest_runner = BacktestRunner(self.initial_balance, self.historical_data, self.config)
+
         # tqdm으로 진행률 표시
         for job in tqdm(jobs, desc="Optimizing Strategies"):
-            result = self._run_single_backtest(job['indicator_combo', job['params')
+            result = backtest_runner.run(job)
             self.optimization_results.append({**job, **result})
 
         self.report_results()
-
-    def _run_single_backtest(self, indicator_combo: tuple, params: dict) -> dict:
-        """단일 백테스트 실행"""
-        trading_system = MultiCoinTradingSystem(initial_balance=self.initial_balance)
-        portfolio_history = []
-
-        data_by_date = {
-            date: group for date, group in self.historical_data.groupby('date')
-        }
-
-        target_allocations = self.config.TARGET_ALLOCATION
-        for current_date in sorted(data_by_date.keys()):
-            current_prices = {row['coin']: row['close'] for _, row in data_by_date[current_date].iterrows()}
-                trading_system.portfolio_manager.check_risk_management(current_prices)
-
-                portfolio_value = trading_system.portfolio_manager.get_portfolio_value(current_prices)
-            current_allocations = trading_system.portfolio_manager.get_current_allocation(current_prices)
-
-            for coin in [c for c in target_allocations if c != 'CASH':
-                coin_history_until_today = self.historical_data[
-                    (self.historical_data['coin'] == coin) &
-                    (self.historical_data['date'] <= current_date)
-                ]
-
-                if coin_history_until_today.empty:
-                    continue
-
-                    analysis = trading_system.analyze_coin_signals(coin, coin_history_until_today, indicator_combo, params)
-
-                if analysis['decision']['action'] == 'BUY':
-                    price = current_prices.get(coin)
-                    # 목표 비중보다 적게 보유하고 있을 때만 매수
-                    if price and current_allocations.get(coin, 0) < target_allocations.get(coin, 0):
-                        # 목표 비중과 현재 비중의 차이만큼 매수 (최대 현금의 10%)
-                        amount_to_invest = min(
-                            (target_allocations.get(coin, 0) - current_allocations.get(coin, 0)) * portfolio_value,
-                            trading_system.portfolio_manager.cash * 0.1
-                        )
-                        if amount_to_invest > 10: # 최소 거래 금액 (예: $10)
-                           trading_system.portfolio_manager.execute_trade(coin, 'BUY', amount_to_invest / price, price)
-
-            portfolio_value = trading_system.portfolio_manager.get_portfolio_value(current_prices)
-            portfolio_history.append({'date': current_date, 'portfolio_value': portfolio_value})
-
-        # 결과 분석
-        if not portfolio_history:
-            return {'total_return': -100, 'mdd': -100, 'final_value': 0}
-
-        results_df = pd.DataFrame(portfolio_history).set_index('date')
-        final_value = results_df['portfolio_value'.iloc[-1]
-        total_return = (final_value / self.initial_balance - 1) * 100
-        peak = results_df['portfolio_value'].cummax()
-        drawdown = (results_df['portfolio_value'] - peak) / peak
-        mdd = drawdown.min() * 100
-
-        return {'total_return': total_return, 'mdd': mdd, 'final_value': final_value, 'history': results_df}
 
     def report_results(self):
         """최적화 결과 리포트 및 시각화"""
@@ -175,17 +213,22 @@ class Optimizer:
             return
 
         results_df = pd.DataFrame(self.optimization_results)
+        # params와 combo를 문자열로 변환
         results_df['params_str'] = results_df['params'].astype(str)
+        results_df['buy_combo_str'] = results_df['buy_indicator_combo'].astype(str)
+        results_df['sell_combo_str'] = results_df['sell_indicator_combo'].astype(str)
+
         results_df = results_df.sort_values(by='final_value', ascending=False).reset_index(drop=True)
 
         # 결과를 CSV 파일로 저장
-        results_df.drop(columns=['history').to_csv('optimization_results.csv', index=False, encoding='utf-8-sig')
+        results_df.drop(columns=['history']).to_csv('optimization_results.csv', index=False, encoding='utf-8-sig')
         logger.info("전체 최적화 결과가 'optimization_results.csv' 파일로 저장되었습니다.")
-        print("\n" + "="*130)
+
+        print("\n" + "="*150)
         print(" ** 전략 최적화 결과 리포트 (상위 10개) **")
-        print("="*130)
-        print(f"{'Rank':<5} {'Return (%)':<12} {'MDD (%)':<12} {'Final Value ($)':<18} {'Indicator Combo':<30} {'Parameters'}")
-        print("-"*130)
+        print("="*150)
+        print(f"{'Rank':<5} {'Return (%)':<12} {'MDD (%)':<12} {'Final Value ($)':<18} {'Buy Combo':<25} {'Sell Combo':<25} {'Parameters'}")
+        print("-"*150)
 
         for i, row in results_df.head(10).iterrows():
             print(
@@ -193,17 +236,21 @@ class Optimizer:
                 f"{row['total_return']:<12.2f} "
                 f"{row['mdd']:<12.2f} "
                 f"{row['final_value']:<18,.2f} "
-                f"{str(row['indicator_combo']):<30} "
+                f"{row['buy_combo_str']:<25} "
+                f"{row['sell_combo_str']:<25} "
                 f"{row['params_str']}"
             )
-        print("="*130)
+
+        print("="*150)
 
         if results_df.empty:
             logger.warning("유효한 최적화 결과를 찾지 못했습니다.")
             return
 
         best_result = results_df.iloc[0]
-        logger.info(f"🏆 최적 전략: {best_result['indicator_combo']}")
+
+        logger.info(f"🏆 최적 매수 전략: {best_result['buy_indicator_combo'}")
+        logger.info(f"🏆 최적 매도 전략: {best_result['sell_indicator_combo'}")
         logger.info(f"   - 파라미터: {best_result['params_str']}")
         logger.info(f"   - 총 수익률: {best_result['total_return']:.2f}% | 최종 자산: ${best_result['final_value']:,.2f} | MDD: {best_result['mdd']:.2f}%")
 
@@ -219,11 +266,11 @@ class Optimizer:
             return
 
         # MDD 계산
-        history_df['peak'] = history_df['portfolio_value'].cummax()
-        history_df['drawdown'] = (history_df['portfolio_value'] - history_df['peak']) / history_df['peak'
+        history_df['peak'] = history_df['portfolio_value'.cummax()
+        history_df['drawdown'] = (history_df['portfolio_value'] - history_df['peak') / history_df['peak']
 
         # 그래프 생성
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1})
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
 
         fig.suptitle('Best Strategy Performance', fontsize=16)
 
@@ -243,6 +290,7 @@ class Optimizer:
         ax2.legend()
 
         plt.xlabel('Date')
+
         plt.tight_layout(rect=[0, 0, 1, 0.96])
     try:
             plt.savefig('best_strategy_performance.png', dpi=300)

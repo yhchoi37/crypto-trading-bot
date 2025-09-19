@@ -48,6 +48,7 @@ class TradingConfig:
         self.SUPPORTED_COINS = [
             'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
             'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
+        ]
 
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
@@ -94,6 +95,43 @@ class TradingConfig:
 
             'buy_trigger_threshold': 2,
             'sell_trigger_threshold': 3
+        }
+
+        # 백테스팅 파라미터 최적화 설정 (Grid Search)
+        self.OPTIMIZATION_CONFIG = {
+            # 1. 매수 전략 최적화 설정
+            'buy_indicators': {
+                'MA_Cross': {
+                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                },
+                'RSI': {
+                    'rsi_period': {'min': 14, 'max': 21, 'step': 7},
+                    'rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
+                }
+            },
+            'buy_trigger_threshold': {'min': 1, 'max': 2, 'step': 1},
+            'buy_signal_weights': {
+                'MA_Cross_buy': 1,
+                'RSI_buy': 1
+            },
+
+            # 2. 매도 전략 최적화 설정
+            'sell_indicators': {
+                'Dead_Cross': {
+                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                },
+                'RSI_Sell': {
+                    'rsi_period': {'min': 14, 'max': 21, 'step': 7},
+                    'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
+                }
+            },
+            'sell_trigger_threshold': {'min': 1, 'max': 2, 'step': 1},
+            'sell_signal_weights': {
+                'Dead_Cross_sell': 1,
+                'RSI_Sell_sell': 2
+            }
         }
 
         self._validate_config()
