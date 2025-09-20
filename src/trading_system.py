@@ -25,59 +25,57 @@ class TechnicalAnalysisAlgorithm:
         params = job_config['params']
         buy_combo = job_config['buy_indicator_combo']
         sell_combo = job_config['sell_indicator_combo']
-        # 데이터가 충분한지 기본 검사 (가장 긴 기간을 기준으로 동적 계산)
         required_periods = [p for p_name, p in params.items() if 'period' in p_name or 'window' in p_name]
         if not required_periods or historical_data.empty or len(historical_data) < max(required_periods):
             return {'action': 'HOLD', 'strength': 0}
 
         df = historical_data.copy()
-        buy_score = 0
-        sell_score = 0
+        buy_score, sell_score = 0, 0
         weights = params['weights']
 
-        # --- 모든 필요한 지표를 한 번에 계산 ---
-        # MA (short, long), RSI는 양쪽에서 모두 사용할 수 있으므로 미리 계산
-        if any('MA' in ind or 'Dead' in ind for ind in buy_combo + sell_combo):
-            df.ta.sma(length=params['ma_short_period', append=True)
-            df.ta.sma(length=params['ma_long_period'], append=True)
-        if any('RSI' in ind for ind in buy_combo + sell_combo):
-            df.ta.rsi(length=params['rsi_period'], append=True)
+        # --- 매수/매도에 필요한 모든 지표 계산 ---
+        if 'MA_Cross' in buy_combo:
+            df.ta.sma(length=params['buy_ma_short_period'], append=True)
+            df.ta.sma(length=params['buy_ma_long_period'], append=True)
+        if 'RSI' in buy_combo:
+            df.ta.rsi(length=params['buy_rsi_period'], append=True)
+        if 'Dead_Cross' in sell_combo:
+            # 매수/매도 기간이 다를 수 있으므로 별도 계산
+            if not ('MA_Cross' in buy_combo and params['buy_ma_short_period'] == params['sell_ma_short_period'] and params['buy_ma_long_period' == params['sell_ma_long_period'):
+                df.ta.sma(length=params['sell_ma_short_period'], append=True)
+                df.ta.sma(length=params['sell_ma_long_period'], append=True)
+        if 'RSI_Sell' in sell_combo:
+            if not ('RSI' in buy_combo and params['buy_rsi_period'] == params['sell_rsi_period']):
+                df.ta.rsi(length=params['sell_rsi_period'], append=True)
 
-        # 데이터가 충분하지 않아 지표 계산이 안된 경우를 대비
-        if df.empty or len(df) < 2:
-        return {'action': 'HOLD', 'strength': 0}
-
-        latest = df.iloc[-1]
-        previous = df.iloc[-2]
+        if len(df) < 2: return {'action': 'HOLD', 'strength': 0}
+        latest, previous = df.iloc[-1], df.iloc[-2]
 
         # --- 매수 신호 점수 계산 ---
         if 'MA_Cross' in buy_combo:
-            ma_short_col = f"SMA_{params['ma_short_period']}"
-            ma_long_col = f"SMA_{params['ma_long_period']}"
-            # NaN 값 체크 추가
-            if pd.notna(latest[ma_short_col]) and pd.notna(latest[ma_long_col]) and \
-               pd.notna(previous[ma_short_col]) and pd.notna(previous[ma_long_col]):
+            ma_short_col = f"SMA_{params['buy_ma_short_period']}"
+            ma_long_col = f"SMA_{params['buy_ma_long_period']}"
+            if pd.notna(latest[ma_short_col]) and pd.notna(latest[ma_long_col]) and pd.notna(previous[ma_short_col]) and pd.notna(previous[ma_long_col]):
                 if latest[ma_short_col] > latest[ma_long_col] and previous[ma_short_col] <= previous[ma_long_col]:
                     buy_score += weights['MA_Cross_buy']
         if 'RSI' in buy_combo:
-            rsi_col = f"RSI_{params['rsi_period']}"
-            if pd.notna(latest[rsi_col]) and latest[rsi_col < params['rsi_oversold_threshold']:
+            rsi_col = f"RSI_{params['buy_rsi_period']}"
+            if pd.notna(latest[rsi_col]) and latest[rsi_col] < params['buy_rsi_oversold_threshold']:
                 buy_score += weights['RSI_buy']
 
         # --- 매도 신호 점수 계산 ---
         if 'Dead_Cross' in sell_combo:
-            ma_short_col = f"SMA_{params['ma_short_period']}"
-            ma_long_col = f"SMA_{params['ma_long_period']}"
-            if pd.notna(latest[ma_short_col]) and pd.notna(latest[ma_long_col]) and \
-               pd.notna(previous[ma_short_col]) and pd.notna(previous[ma_long_col]):
+            ma_short_col = f"SMA_{params['sell_ma_short_period']}"
+            ma_long_col = f"SMA_{params['sell_ma_long_period']}"
+            if pd.notna(latest[ma_short_col]) and pd.notna(latest[ma_long_col]) and pd.notna(previous[ma_short_col]) and pd.notna(previous[ma_long_col]):
                 if latest[ma_short_col] < latest[ma_long_col] and previous[ma_short_col] >= previous[ma_long_col]:
                     sell_score += weights['Dead_Cross_sell']
         if 'RSI_Sell' in sell_combo:
-            rsi_col = f"RSI_{params['rsi_period']}"
-            if pd.notna(latest[rsi_col]) and latest[rsi_col] > params['rsi_overbought_threshold']:
+            rsi_col = f"RSI_{params['sell_rsi_period']}"
+            if pd.notna(latest[rsi_col]) and latest[rsi_col] > params['sell_rsi_overbought_threshold']:
                 sell_score += weights['RSI_Sell_sell']
 
-        # --- 최종 결정 (매도 신호 우선) ---
+        # --- 최종 결정 ---
         if sell_score >= params['sell_trigger_threshold']:
             return {'action': 'SELL', 'strength': sell_score}
         if buy_score >= params['buy_trigger_threshold']:
@@ -144,7 +142,7 @@ class MultiCoinTradingSystem:
         logger.info(f"🔄 거래 사이클 시작 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         # TARGET_ALLOCATION에 설정된 코인 목록을 가져옴 (CASH 제외)
-        coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH'
+        coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH']
         current_prices = self.data_manager.get_coin_prices(coins)
         
         active_signals = []

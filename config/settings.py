@@ -49,7 +49,6 @@ class TradingConfig:
             'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
             'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
         ]
-
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
             'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
@@ -102,12 +101,12 @@ class TradingConfig:
             # 1. 매수 전략 최적화 설정
             'buy_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                    'buy_ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+                    'buy_ma_long_period': {'min': 20, 'max': 40, 'step': 10}
                 },
                 'RSI': {
-                    'rsi_period': {'min': 14, 'max': 21, 'step': 7},
-                    'rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
+                    'buy_rsi_period': {'min': 14, 'max': 21, 'step': 7},
+                    'buy_rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
                 }
             },
             'buy_trigger_threshold': {'min': 1, 'max': 2, 'step': 1},
@@ -119,12 +118,12 @@ class TradingConfig:
             # 2. 매도 전략 최적화 설정
             'sell_indicators': {
                 'Dead_Cross': {
-                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                    'sell_ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+                    'sell_ma_long_period': {'min': 20, 'max': 40, 'step': 10}
                 },
                 'RSI_Sell': {
-                    'rsi_period': {'min': 14, 'max': 21, 'step': 7},
-                    'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
+                    'sell_rsi_period': {'min': 14, 'max': 21, 'step': 7},
+                    'sell_rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
                 }
             },
             'sell_trigger_threshold': {'min': 1, 'max': 2, 'step': 1},
@@ -132,6 +131,13 @@ class TradingConfig:
                 'Dead_Cross_sell': 1,
                 'RSI_Sell_sell': 2
             }
+        }
+
+        # 전진 분석 (Walk-Forward Optimization) 설정
+        self.WALK_FORWARD_CONFIG = {
+            'enabled': True,  # 전진 분석 활성화 여부
+            'training_period_months': 12, # 훈련 기간 (과거 12개월 데이터로 최적화)
+            'testing_period_months': 3    # 검증 기간 (이후 3개월 데이터로 성과 검증)
         }
 
         self._validate_config()
@@ -152,7 +158,7 @@ class TradingConfig:
         unallocated_coins = [
             coin for coin in self.SUPPORTED_COINS
             if coin not in self.TARGET_ALLOCATION
-        ]
+
         if unallocated_coins:
             logger.warning(
                 f"다음 코인은 지원되지만 목표 배분이 설정되지 않았습니다: {', '.join(unallocated_coins)}"
