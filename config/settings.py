@@ -48,7 +48,6 @@ class TradingConfig:
         self.SUPPORTED_COINS = [
             'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
             'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
-        ]
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
             'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
@@ -140,6 +139,11 @@ class TradingConfig:
             'testing_period_months': 3    # 검증 기간 (이후 3개월 데이터로 성과 검증)
         }
 
+        # 성능 최적화 설정
+        self.PERFORMANCE_CONFIG = {
+            'parallel_cores': -1,  # 사용할 CPU 코어 수. -1이면 가능한 모든 코어 사용
+        }
+
         self._validate_config()
 
     def _validate_config(self):
@@ -158,6 +162,7 @@ class TradingConfig:
         unallocated_coins = [
             coin for coin in self.SUPPORTED_COINS
             if coin not in self.TARGET_ALLOCATION
+        ]
 
         if unallocated_coins:
             logger.warning(
