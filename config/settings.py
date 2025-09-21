@@ -48,6 +48,7 @@ class TradingConfig:
         self.SUPPORTED_COINS = [
             'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
             'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
+        ]
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
             'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
@@ -144,6 +145,9 @@ class TradingConfig:
             'parallel_cores': -1,  # 사용할 CPU 코어 수. -1이면 가능한 모든 코어 사용
         }
 
+        # 데이터 캐시 설정
+        self.DATA_CACHE_DIR = "data_cache"
+
         self._validate_config()
 
     def _validate_config(self):
@@ -163,7 +167,6 @@ class TradingConfig:
             coin for coin in self.SUPPORTED_COINS
             if coin not in self.TARGET_ALLOCATION
         ]
-
         if unallocated_coins:
             logger.warning(
                 f"다음 코인은 지원되지만 목표 배분이 설정되지 않았습니다: {', '.join(unallocated_coins)}"

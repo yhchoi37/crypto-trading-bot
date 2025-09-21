@@ -9,6 +9,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from config.settings import TradingConfig
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class MultiCoinDataManager:
             if isinstance(all_ticker_data, dict):
                 for ticker, price in all_ticker_data.items():
                     symbol = ticker.split('-')[1]
-                    prices[symbol = price
+                    prices[symbol] = price
             else: # 단일 코인 조회 시 float 반환 대응
                 if len(coins) == 1 and isinstance(all_ticker_data, (int, float)):
                     prices[coins[0]] = all_ticker_data
@@ -64,7 +65,7 @@ class MultiCoinDataManager:
                 except Exception as e_ind:
                     logger.error(f"[Upbit] {symbol} 가격 조회 에러: {e_ind}")
         if prices:
-            self._cache[cache_key = prices
+            self._cache[cache_key] = prices
             self._last_updated[cache_key] = time.time()
             logger.info(f"{len(prices)}개 코인 가격 정보 업데이트 완료")
 
@@ -98,32 +99,66 @@ class MultiCoinDataManager:
         return result_df
 
     def get_historical_data_for_backtest(self, coins, start_date, end_date):
-        """백테스트용 과거 데이터 반환 (긴 기간에 대해 나눠서 요청)"""
+        """
+        백테스트용 과거 데이터 반환 (Parquet 캐싱 적용)
+        먼저 로컬 캐시에서 데이터를 찾고, 없으면 API를 통해 다운로드 후 저장합니다.
+        """
+        # 캐시 디렉토리 생성
+        cache_dir = self.config.DATA_CACHE_DIR
+        os.makedirs(cache_dir, exist_ok=True)
+
         all_data = []
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
 
         for symbol in coins:
-            logger.info(f"'{symbol}'의 과거 데이터 수집 중 ({start_date} ~ {end_date})...")
+            # 캐시 파일 경로 생성
+            cache_file = f"{cache_dir}/{symbol}_{start_date}_to_{end_date}.parquet"
+
+            # 1. 캐시 확인
+            if os.path.exists(cache_file):
+                logger.info(f"'{symbol}' 데이터 캐시 발견. 파일에서 로드합니다: {cache_file}")
+                df = pd.read_parquet(cache_file)
+                all_data.append(df)
+                continue
+
+            # 2. 캐시 없으면 API 호출
+            logger.info(f"'{symbol}' 데이터 캐시 없음. API를 통해 수집합니다 ({start_date} ~ {end_date})...")
             try:
                 df = pyupbit.get_ohlcv(
                     f"KRW-{symbol}",
                     interval="day",
-                    to=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
-                    count=(end_dt - start_dt).days + 1
+                    to=end_dt.strftime('%Y-%m-%d 23:59:59'), # 마지막 날을 포함하도록 시간 지정
+                    count=(end_dt - start_dt).days + 2 # 넉넉하게 요청
                 )
-                if df is not None:
-                    # pyupbit이 end_date를 포함하여 count만큼 가져오므로, start_date 이전 데이터는 필터링
-                    df = df[df.index >= start_dt
-                    df = df.reset_index()
+                if df is None:
+                    logger.warning(f"[{symbol}] 데이터 수집 실패: API가 None을 반환했습니다.")
+                    continue
+
+                df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+                if df.empty:
+                    logger.warning(f"[{symbol}] 요청 기간에 해당하는 데이터가 없습니다.")
+                    continue
+
+                df = df.reset_index()
+                df.rename(columns={'index': 'timestamp'}, inplace=True)
                 df['coin'] = symbol
+
+                # 3. 다운로드 후 캐시에 저장
+                df.to_parquet(cache_file)
+                logger.info(f"'{symbol}' 데이터를 캐시에 저장했습니다: {cache_file}")
+
                 all_data.append(df)
                 time.sleep(0.2) # Rate limit 방지
             except Exception as e:
-                logger.error(f"[{symbol}] 백테스트 데이터 수집 에러: {e}")
+                logger.error(f"[{symbol}] 백테스트 데이터 수집 중 에러: {e}")
+
         if not all_data:
         return pd.DataFrame()
 
-        return pd.concat(all_data, ignore_index=True)
-```
+        # 'index' 컬럼명을 통일성 있게 변경
+        final_df = pd.concat(all_data, ignore_index=True)
+        if 'timestamp' in final_df.columns:
+             final_df.rename(columns={'timestamp': 'index'}, inplace=True)
+        return final_df
 
