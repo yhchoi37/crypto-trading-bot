@@ -14,7 +14,7 @@ logs/
 *.log
 
 # 데이터 폴더
-data/
+data_cache/
 
 # 백업 파일
 *.bak

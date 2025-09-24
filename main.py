@@ -14,11 +14,10 @@ from datetime import datetime
 from config.settings import TradingConfig
 from src.trading_system import MultiCoinTradingSystem
 from src.notifications import NotificationManager
+from src.logging_config import setup_logging # 공통 로깅 함수 임포트
 import logging
 
-# 로깅 설정
-logger = logging.getLogger(__name__)
-
+# 최상단 로깅 설정 제거
 class TradingBot:
     """메인 트레이딩 봇 클래스"""
     def __init__(self):
@@ -26,33 +25,17 @@ class TradingBot:
         self.is_running = False
         self.trading_system = None
         self.notification_manager = None
-        self.logger = None
-        self.setup_logging()
-
-    def setup_logging(self):
-        numeric_level = getattr(logging, self.config.LOG_LEVEL, logging.INFO)
-        # 기본 로거 설정, 이전 핸들러 제거
-        for handler in logging.root.handlers[:]:
-            logging.root.removeHandler(handler)
-
-        logging.basicConfig(
-            level=numeric_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('logs/trading.log', encoding='utf-8'),
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
+        # self.logger를 main에서 설정된 로거를 사용하도록 변경
         self.logger = logging.getLogger(__name__)
-        self.logger.info(f"로그 레벨 설정: {self.config.LOG_LEVEL}")
 
+    # setup_logging 메서드 전체 제거
     def initialize(self):
         """시스템 초기화"""
         try:
             self.logger.info("🚀 트레이딩 시스템 초기화 중...")
             # 디렉토리 생성
             os.makedirs('logs', exist_ok=True)
-            os.makedirs('data', exist_ok=True)
+            os.makedirs('data_cache', exist_ok=True)
             os.makedirs('backups', exist_ok=True)
             # 트레이딩 시스템 초기화
             self.trading_system = MultiCoinTradingSystem(
@@ -105,14 +88,14 @@ class TradingBot:
 
     def run_rebalancing(self):
         """포트폴리오 리밸런싱"""
-    try:
+        try:
             self.logger.info("⚖️ 포트폴리오 리밸런싱 실행")
             prices = self.trading_system.data_manager.get_coin_prices()
             self.trading_system.perform_rebalancing(prices)
             portfolio_value = self.trading_system.portfolio_manager.get_portfolio_value(prices)
             message = f"⚖️ 리밸런싱 완료\n포트폴리오 가치: ${portfolio_value:,.2f}"
             self.notification_manager.send_alert(message, "REBALANCING")
-    except Exception as e:
+        except Exception as e:
             self.logger.error(f"❌ 리밸런싱 실패: {e}", exc_info=True)
 
     def send_daily_report(self):
@@ -126,8 +109,8 @@ class TradingBot:
                       f"- 총 가치: ${metrics['total_value']:,.2f}\n"
                       f"- 총 수익률: {metrics['total_return']:+.2f}%\n"
                       f"- 현금 잔고: ${metrics['cash_balance']:,.2f}\n"
-                      f"📈 오늘 거래 수: {metrics['trades_today'}\n"
-                      f"🏷️ 보유 포지션 수: {metrics['total_positions'}")
+                      f"📈 오늘 거래 수: {metrics['trades_today']}\n"
+                      f"🏷️ 보유 포지션 수: {metrics['total_positions']}")
             self.notification_manager.send_alert(report, "DAILY_REPORT")
             self.logger.info("📧 일일 리포트 전송 완료")
         except Exception as e:
@@ -178,17 +161,31 @@ class TradingBot:
 
 def main():
     """메인 함수"""
+    # 1. TradingConfig 인스턴스를 먼저 생성
+    config = TradingConfig()
+
+    # 2. 공통 로깅 함수를 호출하여 로거를 설정
+    setup_logging(config.LOG_LEVEL, 'trading.log')
+
+    # 이제부터 로깅 사용 가능
+    logger = logging.getLogger(__name__)
+
     print("🚀 다중 코인 + 소셜미디어 센티멘트 분석 트레이딩 봇")
     print("=" * 60)
+
     bot = TradingBot()
     try:
         bot.start()
+    except KeyboardInterrupt:
+        logger.info("⏹️ 사용자에 의해 중지됨")
     except Exception as e:
-        logger.error(f"❌ 봇 실행 중 치명적인 오류 발생: {e}", exc_info=True)
+        logger.critical(f"❌ 봇 실행 중 치명적인 오류 발생: {e}", exc_info=True)
+        # 봇이 초기화되었다면 stop 메서드 호출
+        if bot and bot.is_running:
+            bot.stop()
         return 1
     return 0
 
 if __name__ == "__main__":
     sys.exit(main())
-```
 

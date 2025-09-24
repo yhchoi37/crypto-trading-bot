@@ -19,13 +19,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 from config.settings import TradingConfig
 from src.trading_system import MultiCoinTradingSystem
 from src.data_manager import MultiCoinDataManager
+from src.logging_config import setup_logging # 공통 로깅 함수 임포트
 
-# 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stdout
-)
 logger = logging.getLogger(__name__)
 
 
@@ -70,7 +65,7 @@ class BacktestRunner:
                 if coin_history_until_today.empty: continue
                 analysis = trading_system.analyze_coin_signals(coin, coin_history_until_today, job_config)
                 decision = analysis['decision']
-                    price = current_prices.get(coin)
+                price = current_prices.get(coin)
                 if not price: continue
 
                 if decision['action'] == 'BUY':
@@ -111,6 +106,7 @@ class Optimizer:
         self.initial_balance = initial_balance
         self.config = config
         self.historical_data = historical_data
+
     def _generate_param_space(self, params_config: dict) -> dict:
         param_values = {}
         for name, config in params_config.items():
@@ -302,6 +298,12 @@ class WalkForwardOptimizer:
             plt.close(fig)
 
 def main():
+    # 1. TradingConfig를 먼저 로드하여 LOG_LEVEL에 접근
+    config = TradingConfig()
+
+    # 2. 중앙 로깅 함수를 호출하여 로거를 설정 (로그 파일 이름 지정)
+    setup_logging(config.LOG_LEVEL, 'backtest.log')
+    
     logger.info("🚀 전략 최적화 시스템 시작")
     START_DATE = "2022-01-01"
     END_DATE = "2023-12-31"

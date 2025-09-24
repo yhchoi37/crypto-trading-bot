@@ -78,7 +78,7 @@ class MultiCoinPortfolioManager:
                 new_quantity = old_quantity + quantity
                 new_value = old_value + trade_value
 
-                position['avg_buy_price' = new_value / new_quantity
+                position['avg_buy_price'] = new_value / new_quantity
                 position['quantity'] = new_quantity
             else:
                 # 신규 포지션
@@ -187,7 +187,7 @@ class MultiCoinPortfolioManager:
                 'total_return': total_return,
                 'cash_balance': cash_balance,
                 'trades_today': len(self.trade_history), # TODO: 날짜별 거래 필터링 필요
-                'total_positions': len([p for p in self.coins.values() if p.get('quantity', 0) > 0)
+                'total_positions': len([p for p in self.coins.values() if p.get('quantity', 0) > 0])
             }
         }
 

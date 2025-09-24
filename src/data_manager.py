@@ -56,7 +56,7 @@ class MultiCoinDataManager:
         except Exception as e:
             logger.error(f"[Upbit] 전체 가격 조회 에러: {e}. 개별 조회 시도.")
             for symbol in coins:
-            try:
+                try:
                     ticker = f"KRW-{symbol}"
                     price = pyupbit.get_current_price(ticker)
                     if price:
@@ -90,7 +90,7 @@ class MultiCoinDataManager:
             except Exception as e:
                 logger.error(f"[{symbol} 데이터 수집 실패: {e}")
         if not all_data:
-        return pd.DataFrame()
+            return pd.DataFrame()
 
         result_df = pd.concat(all_data, ignore_index=True)
         self._cache[cache_key] = result_df
@@ -101,10 +101,10 @@ class MultiCoinDataManager:
     def get_historical_data_for_backtest(self, coins, start_date, end_date):
         """
         백테스트용 과거 데이터 반환 (Parquet 캐싱 적용)
-        먼저 로컬 캐시에서 데이터를 찾고, 없으면 API를 통해 다운로드 후 저장합니다.
+        설정된 interval(시간봉/일봉 등)에 따라 데이터를 수집합니다.
         """
-        # 캐시 디렉토리 생성
         cache_dir = self.config.DATA_CACHE_DIR
+        interval = self.config.BACKTEST_INTERVAL
         os.makedirs(cache_dir, exist_ok=True)
 
         all_data = []
@@ -112,30 +112,44 @@ class MultiCoinDataManager:
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
 
         for symbol in coins:
-            # 캐시 파일 경로 생성
-            cache_file = f"{cache_dir}/{symbol}_{start_date}_to_{end_date}.parquet"
+            cache_file = f"{cache_dir}/{symbol}_{interval}_{start_date}_to_{end_date}.parquet"
 
-            # 1. 캐시 확인
             if os.path.exists(cache_file):
-                logger.info(f"'{symbol}' 데이터 캐시 발견. 파일에서 로드합니다: {cache_file}")
+                logger.info(f"'{symbol}' ({interval}) 데이터 캐시 발견. 파일에서 로드합니다.")
                 df = pd.read_parquet(cache_file)
                 all_data.append(df)
                 continue
 
-            # 2. 캐시 없으면 API 호출
-            logger.info(f"'{symbol}' 데이터 캐시 없음. API를 통해 수집합니다 ({start_date} ~ {end_date})...")
+            logger.info(f"'{symbol}' ({interval}) 데이터 캐시 없음. API를 통해 수집합니다...")
             try:
-                df = pyupbit.get_ohlcv(
+                df_list = []
+                to_time = end_dt + timedelta(days=1)
+
+                while True:
+                    df_chunk = pyupbit.get_ohlcv(
                     f"KRW-{symbol}",
-                    interval="day",
-                    to=end_dt.strftime('%Y-%m-%d 23:59:59'), # 마지막 날을 포함하도록 시간 지정
-                    count=(end_dt - start_dt).days + 2 # 넉넉하게 요청
+                        interval=interval,
+                        to=to_time,
+                        count=200
                 )
-                if df is None:
-                    logger.warning(f"[{symbol}] 데이터 수집 실패: API가 None을 반환했습니다.")
+                    if df_chunk is None or df_chunk.empty:
+                        break
+
+                    df_list.append(df_chunk)
+                    first_timestamp = df_chunk.index[0]
+                    if first_timestamp <= start_dt:
+                        break
+
+                    to_time = first_timestamp
+                    time.sleep(0.25) # API Rate Limit
+                if not df_list:
+                    logger.warning(f"[{symbol} 데이터 수집 실패.")
                     continue
 
-                df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+                df = pd.concat(df_list).sort_index()
+                df = df[~df.index.duplicated(keep='first')]
+
+                df = df[(df.index >= start_dt) & (df.index < (end_dt + timedelta(days=1)))]
                 if df.empty:
                     logger.warning(f"[{symbol}] 요청 기간에 해당하는 데이터가 없습니다.")
                     continue
@@ -144,19 +158,15 @@ class MultiCoinDataManager:
                 df.rename(columns={'index': 'timestamp'}, inplace=True)
                 df['coin'] = symbol
 
-                # 3. 다운로드 후 캐시에 저장
                 df.to_parquet(cache_file)
-                logger.info(f"'{symbol}' 데이터를 캐시에 저장했습니다: {cache_file}")
-
+                logger.info(f"'{symbol}' ({interval}) 데이터를 캐시에 저장했습니다.")
                 all_data.append(df)
-                time.sleep(0.2) # Rate limit 방지
             except Exception as e:
-                logger.error(f"[{symbol}] 백테스트 데이터 수집 중 에러: {e}")
+                logger.error(f"[{symbol}] 백테스트 데이터 수집 중 에러: {e}", exc_info=True)
 
         if not all_data:
-        return pd.DataFrame()
+            return pd.DataFrame()
 
-        # 'index' 컬럼명을 통일성 있게 변경
         final_df = pd.concat(all_data, ignore_index=True)
         if 'timestamp' in final_df.columns:
              final_df.rename(columns={'timestamp': 'index'}, inplace=True)

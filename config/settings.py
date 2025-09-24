@@ -72,6 +72,9 @@ class TradingConfig:
             'transaction_fee_percent': 0.001
         }
 
+        # 백테스팅 시간 단위 설정
+        self.BACKTEST_INTERVAL = 'minute60' # 'day', 'minute240', 'minute60' 등 pyupbit에서 지원하는 interval
+
         # 기술적 분석 설정
         self.TECHNICAL_ANALYSIS_CONFIG = {
             'ma_short_period': 5,
