@@ -124,7 +124,7 @@ class TechnicalAnalysisAlgorithm:
 
 class MultiCoinTradingSystem:
     """다중 코인 통합 트레이딩 시스템"""
-    def __init__(self, initial_balance: float = 100000, config: TradingConfig = None):
+    def __init__(self, initial_balance: float = 10000000, config: TradingConfig = None):
         """
         시스템을 초기화합니다.
         config 객체가 주입되지 않으면 새로 생성합니다.
@@ -147,7 +147,7 @@ class MultiCoinTradingSystem:
         # backtest.py로 실행 시 항상 기술적 분석 사용
         if self.config.IS_BACKTEST_MODE:
             tech_algo = TechnicalAnalysisAlgorithm()
-            self.algorithms['technical_analysis' = {
+            self.algorithms['technical_analysis'] = {
                 'algorithm': tech_algo, 'weight': 1.0, 'enabled_coins': enabled_coins
             }
             logger.info("📈 백테스트 모드 활성화. 기술적 분석 알고리즘을 사용합니다.")
@@ -229,7 +229,7 @@ class MultiCoinTradingSystem:
             if not coin_data.empty:
                 # 실시간 거래에서는 job_config 없이 호출
                 analysis = self.analyze_coin_signals(coin, coin_data)
-                    decision = analysis['decision']
+                decision = analysis['decision']
 
                 if decision['action'] != 'HOLD':
                     active_signals.append({
@@ -239,7 +239,7 @@ class MultiCoinTradingSystem:
 
         # --- 거래 실행 로직 (main.py로 실행 시에만 해당) ---
         if active_signals and not self.config.IS_BACKTEST_MODE:
-        portfolio_value = self.portfolio_manager.get_portfolio_value(current_prices)
+            portfolio_value = self.portfolio_manager.get_portfolio_value(current_prices)
             current_allocations = self.portfolio_manager.get_current_allocation(current_prices)
             target_allocations = self.config.TARGET_ALLOCATION
 
@@ -268,7 +268,7 @@ class MultiCoinTradingSystem:
                         quantity_to_sell = position['quantity'] * 0.5 # 예시: 50% 매도
                         logger.info(f"{log_prefix} {coin} 매도 실행: 수량={quantity_to_sell:.6f}, 가격={price:,.2f}")
                         if not self.config.SIMULATION_MODE:
-                        self.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
+                            self.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
 
         elif not active_signals:
             logger.info("📊 활성 거래 신호 없음.")
