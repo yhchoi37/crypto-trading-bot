@@ -52,8 +52,8 @@ class TradingConfig:
         ]
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
-            'BTC': 0.25, 'ETH': 0.20, 'XRP': 0.10, 'ADA': 0.05,
-            'DOGE': 0.05, 'SOL': 0.05, 'CASH': 0.30
+            'BTC': 0.30, 'ETH': 0.25, 'XRP': 0.20, 'ADA': 0.05,
+            'SOL': 0.10, 'CASH': 0.10
         }
 
         # 센티멘트 분석 설정
@@ -127,33 +127,45 @@ class TradingConfig:
         # 백테스팅 파라미터 최적화 설정 (Grid Search)
         self.OPTIMIZATION_CONFIG = {
             # 1. 매수/매도에 사용할 기술 지표와 파라미터 범위 정의
+            # 'buy_indicators': {
+            #     'MA_Cross': {
+            #         'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+            #         'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+            #     },
+            #     'RSI': {
+            #         'rsi_period': {'min': 14, 'max': 28, 'step': 7},
+            #         'rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
+            #     },
+            #     'BollingerBand': {
+            #         'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
+            #         'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
+            #     }
+            # },
+            # 'sell_indicators': {
+            #     'MA_Cross': {
+            #         'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+            #         'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+            #     },
+            #     'RSI': {
+            #         'rsi_period': {'min': 14, 'max': 28, 'step': 7},
+            #         'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
+            #     },
+            #     'BollingerBand': {
+            #         'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
+            #         'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
+            #     }
+            # },
             'buy_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                    'ma_short_period': {'min': 5, 'max': 10, 'step': 5},
+                    'ma_long_period': {'min': 30, 'max': 40, 'step': 10}
                 },
-                'RSI': {
-                    'rsi_period': {'min': 14, 'max': 28, 'step': 7},
-                    'rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
-                },
-                'BollingerBand': {
-                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-                }
             },
             'sell_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                    'ma_short_period': {'min': 5, 'max': 10, 'step': 5},
+                    'ma_long_period': {'min': 30, 'max': 40, 'step': 10}
                 },
-                'RSI': {
-                    'rsi_period': {'min': 14, 'max': 28, 'step': 7},
-                    'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
-                },
-                'BollingerBand': {
-                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-                }
             },
 
             # 2. 매수/매도 신호 발생을 위한 가중치 합계 임계값 범위

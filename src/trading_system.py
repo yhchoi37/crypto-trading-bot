@@ -19,7 +19,7 @@ class TechnicalAnalysisAlgorithm:
     def __init__(self):
         pass
 
-    def generate_signal(self, historical_data: pd.DataFrame, indicator_combo: tuple, buy_params: dict, sell_params: dict) -> dict:
+    def generate_signal(self, historical_data: pd.DataFrame, indicator_combo: tuple, buy_params: dict, sell_params: dict, weights: dict) -> dict:
         """주어진 지표 조합과 파라미터로 신호를 생성합니다."""
         required_period = max(
             buy_params.get('MA_Cross', {}).get('ma_long_period', 20),
@@ -33,53 +33,69 @@ class TechnicalAnalysisAlgorithm:
         previous = df.iloc[-2]
         buy_score = 0
         sell_score = 0
-        weights = buy_params.get('signal_weights', {})
 
-        # --- 매수 신호 점수 계산 (사전 계산된 컬럼 사용) ---
-        if 'MA_Cross' in indicator_combo:
-            ma_params = buy_params.get('MA_Cross', {})
-            ma_s_col = f'SMA_{ma_params.get("ma_short_period")}'
-            ma_l_col = f'SMA_{ma_params.get("ma_long_period")}'
+        log_msg_details = []
+        # --- 매수 신호 점수 계산 ---
+        if 'MA_Cross' in indicator_combo and 'MA_Cross' in buy_params:
+            ma_params = buy_params['MA_Cross']
+            ma_s_period, ma_l_period = ma_params.get("ma_short_period"), ma_params.get("ma_long_period")
+            if ma_s_period and ma_l_period:
+                ma_s_col, ma_l_col = f'SMA_{ma_s_period}', f'SMA_{ma_l_period}'
             if ma_s_col in df.columns and ma_l_col in df.columns:
-                if latest[ma_s_col] > latest[ma_l_col] and previous[ma_s_col] <= previous[ma_l_col]:
-                    buy_score += weights.get('MA_Cross_buy', 1)
+                    log_msg_details.append(f"Buy MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.2f} vs {latest[ma_l_col]:.2f}")
+                    if latest[ma_s_col] > latest[ma_l_col] and previous[ma_s_col] <= previous[ma_l_col]:
+                        buy_score += weights.get('MA_Cross_buy', 1)
 
-        if 'RSI' in indicator_combo:
-            rsi_params = buy_params.get('RSI', {})
-            rsi_col = f'RSI_{rsi_params.get("rsi_period")}'
-            if rsi_col in df.columns:
-                if latest[rsi_col < rsi_params.get('rsi_oversold_threshold'):
-                    buy_score += weights.get('RSI_buy', 1)
+        if 'RSI' in indicator_combo and 'RSI' in buy_params:
+            rsi_params = buy_params['RSI']
+            rsi_period, rsi_threshold = rsi_params.get("rsi_period"), rsi_params.get('rsi_oversold_threshold')
+            if rsi_period and rsi_threshold:
+                rsi_col = f'RSI_{rsi_period}'
+                if rsi_col in df.columns:
+                    log_msg_details.append(f"Buy RSI({rsi_period}): {latest[rsi_col]:.2f} < {rsi_threshold}?")
+                    if latest[rsi_col] < rsi_threshold:
+                        buy_score += weights.get('RSI_buy', 1)
 
-        if 'BollingerBand' in indicator_combo:
-            bb_params = buy_params.get('BollingerBand', {})
-            bbl_col = f'BBL_{bb_params.get("bollinger_window")}_{bb_params.get("bollinger_std_dev")}.0'
-            if bbl_col in df.columns:
-                if latest['close'] < latest[bbl_col]:
-                    buy_score += weights.get('BollingerBand_buy', 1)
+        if 'BollingerBand' in indicator_combo and 'BollingerBand' in buy_params:
+            bb_params = buy_params['BollingerBand']
+            bb_window, bb_std = bb_params.get("bollinger_window"), bb_params.get("bollinger_std_dev")
+            if bb_window and bb_std:
+                bbl_col = f'BBL_{bb_window}_{bb_std}.0'
+                if bbl_col in df.columns:
+                    log_msg_details.append(f"Buy BB({bb_window},{bb_std}): {latest['close']:.2f} < {latest[bbl_col]:.2f}?")
+                    if latest['close'] < latest[bbl_col]:
+                        buy_score += weights.get('BollingerBand_buy', 1)
 
-        # --- 매도 신호 점수 계산 (사전 계산된 컬럼 사용) ---
-        if 'MA_Cross' in indicator_combo:
-            ma_params = sell_params.get('MA_Cross', {})
-            ma_s_col = f'SMA_{ma_params.get("ma_short_period")}'
-            ma_l_col = f'SMA_{ma_params.get("ma_long_period")}'
-            if ma_s_col in df.columns and ma_l_col in df.columns:
-                if latest[ma_s_col] < latest[ma_l_col] and previous[ma_s_col] >= previous[ma_l_col]:
-                    sell_score += weights.get('MA_Cross_sell', 1)
+        # --- 매도 신호 점수 계산 ---
+        if 'MA_Cross' in indicator_combo and 'MA_Cross' in sell_params:
+            ma_params = sell_params['MA_Cross']
+            ma_s_period, ma_l_period = ma_params.get("ma_short_period"), ma_params.get("ma_long_period")
+            if ma_s_period and ma_l_period:
+                ma_s_col, ma_l_col = f'SMA_{ma_s_period}', f'SMA_{ma_l_period}'
+                if ma_s_col in df.columns and ma_l_col in df.columns:
+                    log_msg_details.append(f"Sell MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.2f} vs {latest[ma_l_col]:.2f}")
+                    if latest[ma_s_col] < latest[ma_l_col] and previous[ma_s_col] >= previous[ma_l_col]:
+                        sell_score += weights.get('MA_Cross_sell', 1)
 
-        if 'RSI' in indicator_combo:
-            rsi_params = sell_params.get('RSI', {})
-            rsi_col = f'RSI_{rsi_params.get("rsi_period")}'
-            if rsi_col in df.columns:
-                if latest[rsi_col] > rsi_params.get('rsi_overbought_threshold'):
-                    sell_score += weights.get('RSI_sell', 1)
+        if 'RSI' in indicator_combo and 'RSI' in sell_params:
+            rsi_params = sell_params['RSI']
+            rsi_period, rsi_threshold = rsi_params.get("rsi_period"), rsi_params.get('rsi_overbought_threshold')
+            if rsi_period and rsi_threshold:
+                rsi_col = f'RSI_{rsi_period}'
+                if rsi_col in df.columns:
+                    log_msg_details.append(f"Sell RSI({rsi_period}): {latest[rsi_col]:.2f} > {rsi_threshold}?")
+                    if latest[rsi_col] > rsi_threshold:
+                        sell_score += weights.get('RSI_sell', 1)
 
-        if 'BollingerBand' in indicator_combo:
-            bb_params = sell_params.get('BollingerBand', {})
-            bbu_col = f'BBU_{bb_params.get("bollinger_window")}_{bb_params.get("bollinger_std_dev")}.0'
-            if bbu_col in df.columns:
-                if latest['close'] > latest[bbu_col]:
-                    sell_score += weights.get('BollingerBand_sell', 1)
+        if 'BollingerBand' in indicator_combo and 'BollingerBand' in sell_params:
+            bb_params = sell_params['BollingerBand']
+            bb_window, bb_std = bb_params.get("bollinger_window"), bb_params.get("bollinger_std_dev")
+            if bb_window and bb_std:
+                bbu_col = f'BBU_{bb_window}_{bb_std}.0'
+                if bbu_col in df.columns:
+                    log_msg_details.append(f"Sell BB({bb_window},{bb_std}): {latest['close']:.2f} > {latest[bbu_col]:.2f}?")
+                    if latest['close'] > latest[bbu_col]:
+                        sell_score += weights.get('BollingerBand_sell', 1)
 
         # --- 최종 결정 ---
         buy_trigger = buy_params.get('buy_trigger_threshold', 99)
@@ -87,19 +103,34 @@ class TechnicalAnalysisAlgorithm:
         is_buy_signal = buy_score >= buy_trigger
         is_sell_signal = sell_score >= sell_trigger
 
+        action = 'HOLD'
+        strength = 0
         if is_buy_signal and not is_sell_signal:
-            return {'action': 'BUY', 'strength': buy_score}
+            action, strength = 'BUY', buy_score
         elif is_sell_signal and not is_buy_signal:
-            return {'action': 'SELL', 'strength': sell_score}
-        else:
-            return {'action': 'HOLD', 'strength': 0}
+            action, strength = 'SELL', sell_score
+
+        # 상세 로그 출력 (점수가 0보다 클 때만)
+        if buy_score > 0 or sell_score > 0:
+            date_str = latest.name.strftime('%Y-%m-%d %H:%M:%S') if isinstance(latest.name, pd.Timestamp) else str(latest.name)
+            logger.debug(
+                f"[{date_str}] Signal Eval: "
+                f"Scores(Buy:{buy_score}/Sell:{sell_score}) | "
+                f"Triggers(Buy:{buy_trigger}/Sell:{sell_trigger}) | "
+                f"Final Action: {action} | Details: {', '.join(log_msg_details)}"
+            )
+        return {'action': action, 'strength': strength}
 
 
 class MultiCoinTradingSystem:
     """다중 코인 통합 트레이딩 시스템"""
-    def __init__(self, initial_balance: float = 100000):
+    def __init__(self, initial_balance: float = 100000, config: TradingConfig = None):
+        """
+        시스템을 초기화합니다.
+        config 객체가 주입되지 않으면 새로 생성합니다.
+        """
         logger.info(f"🚀 트레이딩 시스템 초기화 - 초기 자본: ￦{initial_balance:,.2f}")
-        self.config = TradingConfig()
+        self.config = config if config else TradingConfig()
         self.portfolio_manager = MultiCoinPortfolioManager()
         self.data_manager = MultiCoinDataManager()
         self.twitter_collector = TwitterSentimentCollector()
@@ -142,20 +173,19 @@ class MultiCoinTradingSystem:
         """특정 코인에 대한 종합 신호 분석 (백테스트 시 파라미터 주입 가능)"""
         tech_algo_info = self.algorithms.get('technical_analysis')
         if not tech_algo_info or coin not in tech_algo_info.get('enabled_coins', []):
-        return {'decision': {'action': 'HOLD', 'strength': 0}}
+            return {'decision': {'action': 'HOLD', 'strength': 0}}
 
         algo = tech_algo_info['algorithm']
 
         if self.config.BACKTEST_MODE and job_config:
             # 백테스트: job_config에서 파라미터 추출
+            signal_weights = job_config.get('signal_weights', {})
             buy_params = {
                 'buy_trigger_threshold': job_config.get('buy_trigger_threshold'),
-                'signal_weights': job_config.get('signal_weights', {}),
                 **job_config.get('buy_indicators', {})
             }
             sell_params = {
                 'sell_trigger_threshold': job_config.get('sell_trigger_threshold'),
-                'signal_weights': job_config.get('signal_weights', {}),
                 **job_config.get('sell_indicators', {})
             }
             buy_indicator_combo = tuple(job_config.get('buy_indicators', {}).keys())
@@ -164,21 +194,20 @@ class MultiCoinTradingSystem:
         else:
             # 실시간 거래 또는 기본 설정: config에서 파라미터 추출
             config_params = self.config.TECHNICAL_ANALYSIS_CONFIG
+            signal_weights = config_params.get('signal_weights', {})
             buy_params = {
                 'buy_trigger_threshold': config_params.get('buy_trigger_threshold'),
-                'signal_weights': config_params.get('signal_weights', {}),
                 **config_params.get('buy_indicators', {})
             }
             sell_params = {
                 'sell_trigger_threshold': config_params.get('sell_trigger_threshold'),
-                'signal_weights': config_params.get('signal_weights', {}),
                 **config_params.get('sell_indicators', {})
             }
             buy_indicator_combo = tuple(config_params.get('buy_indicators', {}).keys())
             sell_indicator_combo = tuple(config_params.get('sell_indicators', {}).keys())
             indicator_combo = tuple(set(buy_indicator_combo) | set(sell_indicator_combo))
 
-        signal = algo.generate_signal(data, indicator_combo, buy_params, sell_params)
+        signal = algo.generate_signal(data, indicator_combo, buy_params, sell_params, signal_weights)
         return {'decision': signal}
 
     def run_trading_cycle(self) -> dict:
@@ -205,7 +234,7 @@ class MultiCoinTradingSystem:
                 analysis = self.analyze_coin_signals(coin, coin_data)
 
                 if analysis['decision']['action'] != 'HOLD':
-                    decision = analysis['decision'
+                    decision = analysis['decision']
                     active_signals.append({
                         'coin': coin,
                         'decision': decision,

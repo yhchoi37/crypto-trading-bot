@@ -63,7 +63,8 @@ class BacktestRunner:
         self.config = config
         
     def run(self, job_config: dict) -> dict:
-        trading_system = MultiCoinTradingSystem(initial_balance=self.initial_balance)
+        # 이미 가지고 있는 config 객체를 시스템에 주입합니다.
+        trading_system = MultiCoinTradingSystem(initial_balance=self.initial_balance, config=self.config)
         if self.historical_data.empty:
             return self._analyze_results([])
 
@@ -83,30 +84,40 @@ class BacktestRunner:
                     (self.historical_data['coin'] == coin) & (self.historical_data['date'] <= current_date)
                 ]
                 if coin_history_until_today.empty: continue
-                # job_config에 buy/sell indicator combo가 없으면 MultiCoinTradingSystem에서 오류 발생할 수 있음
-                # job_config 구조를 변경했으므로 MultiCoinTradingSystem.analyze_coin_signals도 수정 필요
-                if 'indicator_combo' in job_config:
-                    # Adapt new job format to old expected format if needed
-                    # This example assumes analyze_coin_signals expects this new format
-                    pass
                 analysis = trading_system.analyze_coin_signals(coin, coin_history_until_today, job_config)
                 decision = analysis['decision']
                 price = current_prices.get(coin)
                 if not price: continue
 
                 if decision['action'] == 'BUY':
-                    if current_allocations.get(coin, 0) < target_allocations.get(coin, 0):
-                        amount_to_invest = min(
-                            (target_allocations.get(coin, 0) - current_allocations.get(coin, 0)) * portfolio_value,
-                            trading_system.portfolio_manager.cash * 0.1
+                    target_ratio = target_allocations.get(coin, 0)
+                    current_ratio = current_allocations.get(coin, 0)
+                    if current_ratio < target_ratio:
+                        amount_to_invest = (target_ratio - current_ratio) * portfolio_value
+                        # 실제 투자금은 가용 현금의 일정 비율을 넘지 않도록 제한 (예: 10%)
+                        max_investment_per_trade = trading_system.portfolio_manager.cash * 0.1
+                        final_investment = min(amount_to_invest, max_investment_per_trade)
+                        logger.debug(
+                            f"[{current_date}] BUY signal for {coin}: "
+                            f"Target({target_ratio:.2%}) > Current({current_ratio:.2%}). "
+                            f"Attempting to invest ~${final_investment:,.2f}."
                         )
-                        if amount_to_invest > 10000:
-                           trading_system.portfolio_manager.execute_trade(coin, 'BUY', amount_to_invest / price, price)
+                        if final_investment > 10000: # 최소 거래 금액
+                           trading_system.portfolio_manager.execute_trade(coin, 'BUY', final_investment / price, price)
+                    else:
+                        logger.debug(
+                            f"[{current_date}] BUY signal for {coin} IGNORED: "
+                            f"Target({target_ratio:.2%}) <= Current({current_ratio:.2%})."
+                        )
                 elif decision['action'] == 'SELL':
                     position = trading_system.portfolio_manager.coins.get(coin)
                     if position and position.get('quantity', 0) > 0:
+                        # 보유 수량의 50%를 매도하는 로직
                         quantity_to_sell = position['quantity'] * 0.5
+                        logger.debug(f"[{current_date}] SELL signal for {coin}: Attempting to sell {quantity_to_sell:.6f} coins.")
                         trading_system.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
+                    else:
+                        logger.debug(f"[{current_date}] SELL signal for {coin} IGNORED: No position to sell.")
 
             portfolio_value = trading_system.portfolio_manager.get_portfolio_value(current_prices)
             portfolio_history.append({'date': current_date, 'portfolio_value': portfolio_value})
@@ -166,7 +177,7 @@ class Optimizer:
 
                 # --- 매도 지표 파라미터 생성 준비 ---
                 for ind_name in sell_combo:
-                    space = self._generate_param_space(cfg['sell_indicators'[ind_name])
+                    space = self._generate_param_space(cfg['sell_indicators'][ind_name])
                     param_combinations = [dict(zip(space.keys(), values)) for values in itertools.product(*space.values())]
                     sell_param_producers.append([(ind_name, p_comb) for p_comb in param_combinations])
 
@@ -212,12 +223,15 @@ class Optimizer:
                                     'signal_weights': cfg.get('signal_weights', {})
                                 })
 
-        # 중복 제거 로직은 현재 구조에서 덜 필요하지만, 만약을 위해 유지
+        # 중복 제거 로직
         final_jobs = []
         temp_set = set()
         for job in jobs:
-            job_repr = json.dumps(job, sort_keys=True)
+            # json.dumps가 numpy 타입을 처리할 수 없으므로, 먼저 파이썬 기본 타입으로 변환
+            job_serializable = convert_numpy_types(job)
+            job_repr = json.dumps(job_serializable, sort_keys=True)
             if job_repr not in temp_set:
+                # 최종 잡 리스트에는 원본(numpy 타입 포함)을 추가해도 무방
                 final_jobs.append(job)
                 temp_set.add(job_repr)
         return final_jobs
@@ -348,17 +362,17 @@ class WalkForwardOptimizer:
 
             logger.info(f"\n{'='*80}\n전진 분석 구간: 훈련 [{train_start.date()}-{train_end.date()} | 검증 [{train_end.date()}-{test_end.date()}\n{'='*80}")
 
-            train_data = self.all_historical_data[(self.all_historical_data['date'] >= train_start.date()) & (self.all_historical_data['date'] < train_end.date()).copy()
+            train_data = self.all_historical_data[(self.all_historical_data['date'] >= train_start.date()) & (self.all_historical_data['date'] < train_end.date())].copy()
             optimizer = Optimizer(total_balance, self.config, train_data)
             best_strategy = optimizer.run_optimization()
 
             if best_strategy:
                 latest_best_strategy = best_strategy # 찾은 최적 전략을 변수에 저장
                 buy_combo_str = ', '.join(best_strategy['buy_indicators'].keys())
-                sell_combo_str = ', '.join(best_strategy['sell_indicators'.keys())
+                sell_combo_str = ', '.join(best_strategy['sell_indicators'].keys())
                 logger.info(f"최적 전략 발견: Buy-({buy_combo_str}) | Sell-({sell_combo_str})")
 
-                test_data = self.all_historical_data[(self.all_historical_data['date'] >= train_end.date()) & (self.all_historical_data['date' < test_end.date())].copy()
+                test_data = self.all_historical_data[(self.all_historical_data['date'] >= train_end.date()) & (self.all_historical_data['date'] < test_end.date())].copy()
                 runner = BacktestRunner(total_balance, test_data, self.config)
                 test_result = runner.run(best_strategy)
 
@@ -409,7 +423,7 @@ class WalkForwardOptimizer:
 
         logger.info(f"\n{'='*80}\n ** 최종 전진 분석(Walk-Forward) 결과 **\n{'='*80}")
         logger.info(f"전체 기간: {self.start_date.date()} ~ {self.end_date.date()}")
-        logger.info(f"초기 자본: ${self.initial_balance:,.2f} | 최종 자산: ${final_stats['final_value':,.2f}")
+        logger.info(f"초기 자본: ${self.initial_balance:,.2f} | 최종 자산: ${final_stats['final_value']:,.2f}")
         logger.info(f"총 수익률: {final_stats['total_return']:.2f}% | 최대 낙폭 (MDD): {final_stats['mdd']:.2f}%")
         logger.info("="*80)
 
@@ -418,7 +432,7 @@ class WalkForwardOptimizer:
     def plot_results(self, history_df):
         if history_df is None or history_df.empty: return
         history_df['peak'] = history_df['portfolio_value'].cummax()
-        history_df['drawdown'] = (history_df['portfolio_value'] - history_df['peak']) / history_df['peak'
+        history_df['drawdown'] = (history_df['portfolio_value'] - history_df['peak']) / history_df['peak']
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
         fig.suptitle('Walk-Forward Analysis Performance', fontsize=16)
@@ -430,7 +444,7 @@ class WalkForwardOptimizer:
 
         plt.xlabel('Date'); plt.tight_layout(rect=[0, 0, 1, 0.96])
         try:
-            plt.savefig('walk_forward_performance.png', dpi=300)
+            plt.savefig(f'walk_forward_performance_{datetime.now().strftime('%y%m%d_%H%M%S')}.png', dpi=300)
             logger.info("성과 그래프가 'walk_forward_performance.png'에 성공적으로 저장되었습니다.")
         except Exception as e:
             logger.error(f"그래프 저장 중 오류 발생: {e}")
@@ -442,7 +456,7 @@ def main():
     config = TradingConfig()
 
     # 2. 중앙 로깅 함수를 호출하여 로거를 설정 (로그 파일 이름 지정)
-    setup_logging(config.LOG_LEVEL, 'backtest.log')
+    setup_logging(config.LOG_LEVEL, 'logs/backtest.log')
     
     logger.info("🚀 전략 최적화 시스템 시작")
     START_DATE = "2022-01-01"

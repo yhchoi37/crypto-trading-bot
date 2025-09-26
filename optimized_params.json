@@ -1,0 +1,24 @@
+{
+    "buy_indicators": {
+        "MA_Cross": {
+            "ma_short_period": 5,
+            "ma_long_period": 30
+        }
+    },
+    "sell_indicators": {
+        "MA_Cross": {
+            "ma_short_period": 5,
+            "ma_long_period": 40
+        }
+    },
+    "buy_trigger_threshold": 1,
+    "sell_trigger_threshold": 1,
+    "signal_weights": {
+        "MA_Cross_buy": 1,
+        "RSI_buy": 1,
+        "BollingerBand_buy": 2,
+        "MA_Cross_sell": 1,
+        "RSI_sell": 1,
+        "BollingerBand_sell": 2
+    }
+}
