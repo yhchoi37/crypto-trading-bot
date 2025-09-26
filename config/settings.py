@@ -19,11 +19,14 @@ class TradingConfig:
         # 데이터 수집 간격 (초)
         self.DATA_COLLECTION_INTERVAL = int(os.getenv('DATA_COLLECTION_INTERVAL', 300))
         
-        # 백테스트 모드 (True/False)
-        self.BACKTEST_MODE = os.getenv('BACKTEST_MODE', 'false').lower() == 'true'
+        # 백테스트 실행 여부 (backtest.py에서 설정)
+        self.IS_BACKTEST_MODE = os.getenv('IS_BACKTEST_MODE', 'false').lower() == 'true'
+
+        # 모의 거래 모드 (main.py에서 사용)
+        self.SIMULATION_MODE = os.getenv('SIMULATION_MODE', 'true').lower() == 'true'
 
         # 기본 설정
-        self.INITIAL_BALANCE = float(os.getenv('INITIAL_BALANCE', 100000))
+        self.INITIAL_BALANCE = float(os.getenv('INITIAL_BALANCE', 10000000))
         self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', 0.15))
         self.REBALANCING_THRESHOLD = float(os.getenv('REBALANCING_THRESHOLD', 0.05))
 

@@ -32,6 +32,7 @@ class MultiCoinPortfolioManager:
                 current_value = self.coins.get(sym, {}).get('quantity', 0) * prices.get(sym, 0)
                 alloc[sym] = current_value / total_value if total_value > 0 else 0
         return alloc
+        
     def get_portfolio_value(self, prices: dict):
         """전체 포트폴리오 가치 계산"""
         if not prices:
@@ -176,6 +177,7 @@ class MultiCoinPortfolioManager:
                 self.execute_trade(sym, 'BUY', quantity_to_trade, price)
             else:
                 self.execute_trade(sym, 'SELL', quantity_to_trade, price)
+
     def get_portfolio_summary(self, prices=None):
         """간단한 포트폴리오 요약"""
         value = self.get_portfolio_value(prices or {})

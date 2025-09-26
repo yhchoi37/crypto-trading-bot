@@ -3,6 +3,9 @@
 기술적 분석 전략 최적화 실행 스크립트 (Walk-Forward Optimization)
 """
 import os
+# TradingConfig가 import 되기 전에 환경 변수를 설정해야 합니다.
+os.environ['IS_BACKTEST_MODE'] = 'true'
+
 import sys
 import logging
 import itertools
@@ -278,7 +281,6 @@ class WalkForwardOptimizer:
         self.start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
         self.end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
         self.initial_balance = initial_balance
-        os.environ['BACKTEST_MODE'] = 'true'
         os.environ['INITIAL_BALANCE'] = str(initial_balance)
         self.config = TradingConfig()
         self.data_manager = MultiCoinDataManager()
@@ -461,7 +463,7 @@ def main():
     logger.info("🚀 전략 최적화 시스템 시작")
     START_DATE = "2022-01-01"
     END_DATE = "2023-12-31"
-    INITIAL_BALANCE = 100000.0
+    INITIAL_BALANCE = 10000000.0
     try:
         wfo = WalkForwardOptimizer(START_DATE, END_DATE, INITIAL_BALANCE)
         wfo.run()

@@ -39,7 +39,8 @@ class TradingBot:
             os.makedirs('backups', exist_ok=True)
             # 트레이딩 시스템 초기화
             self.trading_system = MultiCoinTradingSystem(
-                initial_balance=self.config.INITIAL_BALANCE
+                initial_balance=self.config.INITIAL_BALANCE,
+                config=self.config
             )
             # 포트폴리오 배분 설정
             self.trading_system.setup_portfolio_allocation(
@@ -131,9 +132,13 @@ class TradingBot:
         if not self.initialize():
             return False
         self.is_running = True
-        self.logger.info("🎯 트레이딩 봇 시작!")
+        
+        mode = "모의 거래" if self.config.SIMULATION_MODE else "실거래"
+        self.logger.info(f"🎯 트레이딩 봇 시작! ({mode} 모드)")
+        
         self.notification_manager.send_alert(
-            f"🚀 트레이딩 봇이 시작되었습니다!\n초기 자본: ${self.config.INITIAL_BALANCE:,.2f}",
+            f"🚀 트레이딩 봇이 시작되었습니다! ({mode} 모드)\n"
+            f"초기 자본: ${self.config.INITIAL_BALANCE:,.2f}",
             "BOT_START"
         )
         try:

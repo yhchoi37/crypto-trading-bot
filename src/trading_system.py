@@ -60,7 +60,7 @@ class TechnicalAnalysisAlgorithm:
             bb_params = buy_params['BollingerBand']
             bb_window, bb_std = bb_params.get("bollinger_window"), bb_params.get("bollinger_std_dev")
             if bb_window and bb_std:
-                bbl_col = f'BBL_{bb_window}_{bb_std}.0'
+                bbl_col = f'BBL_{bb_window}_{bb_std}.0' 
                 if bbl_col in df.columns:
                     log_msg_details.append(f"Buy BB({bb_window},{bb_std}): {latest['close']:.2f} < {latest[bbl_col]:.2f}?")
                     if latest['close'] < latest[bbl_col]:
@@ -143,23 +143,22 @@ class MultiCoinTradingSystem:
         """알고리즘 설정"""
         logger.info("🔧 거래 알고리즘 설정 중...")
         enabled_coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH']
-        if self.config.BACKTEST_MODE:
-            # 백테스트 모드: 기술적 분석 알고리즘 객체만 생성 (파라미터는 실행 시 주입)
+
+        # backtest.py로 실행 시 항상 기술적 분석 사용
+        if self.config.IS_BACKTEST_MODE:
             tech_algo = TechnicalAnalysisAlgorithm()
-            self.algorithms['technical_analysis'] = {
-                'algorithm': tech_algo,
-                'weight': 1.0,
-                'enabled_coins': enabled_coins
+            self.algorithms['technical_analysis' = {
+                'algorithm': tech_algo, 'weight': 1.0, 'enabled_coins': enabled_coins
             }
             logger.info("📈 백테스트 모드 활성화. 기술적 분석 알고리즘을 사용합니다.")
         else:
-            # 실시간 거래 모드: 소셜 센티멘트 알고리즘 사용
-            social_algo = SocialSentimentBasedAlgorithm(self.twitter_collector, self.reddit_collector)
-            self.algorithms['social_sentiment'] = {
-                'algorithm': social_algo,
-                'weight': 1.0,
-                'enabled_coins': enabled_coins
+            # main.py로 실행 시 소셜 센티멘트 등 다른 알고리즘 사용 가능 (현재는 기술적 분석으로 고정)
+            # TODO: 실거래 시 사용할 알고리즘 선택 로직 추가
+            tech_algo = TechnicalAnalysisAlgorithm()
+            self.algorithms['technical_analysis'] = {
+                'algorithm': tech_algo, 'weight': 1.0, 'enabled_coins': enabled_coins
             }
+            logger.info("🤖 실시간/모의 거래 모드 활성화. 기술적 분석 알고리즘을 사용합니다.")
         logger.info(f"✅ {len(self.algorithms)}개 알고리즘 설정 완료. 대상 코인: {', '.join(enabled_coins)}")
 
     def setup_portfolio_allocation(self, target_allocation: dict):
@@ -177,7 +176,8 @@ class MultiCoinTradingSystem:
 
         algo = tech_algo_info['algorithm']
 
-        if self.config.BACKTEST_MODE and job_config:
+        # 백테스트 모드일 경우에만 job_config(최적화 파라미터)를 사용
+        if self.config.IS_BACKTEST_MODE and job_config:
             # 백테스트: job_config에서 파라미터 추출
             signal_weights = job_config.get('signal_weights', {})
             buy_params = {
@@ -192,7 +192,7 @@ class MultiCoinTradingSystem:
             sell_indicator_combo = tuple(job_config.get('sell_indicators', {}).keys())
             indicator_combo = tuple(set(buy_indicator_combo) | set(sell_indicator_combo))
         else:
-            # 실시간 거래 또는 기본 설정: config에서 파라미터 추출
+            # 실시간/모의 거래: config 파일의 기본 설정 사용
             config_params = self.config.TECHNICAL_ANALYSIS_CONFIG
             signal_weights = config_params.get('signal_weights', {})
             buy_params = {
@@ -214,14 +214,11 @@ class MultiCoinTradingSystem:
         """한 번의 거래 사이클 실행"""
         logger.info(f"🔄 거래 사이클 시작 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # TARGET_ALLOCATION에 설정된 코인 목록을 가져옴 (CASH 제외)
         coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH']
         current_prices = self.data_manager.get_coin_prices(coins)
         
         active_signals = []
-
-        # 모든 코인 데이터를 한 번에 가져오도록 수정
-        all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=50) # MA 계산을 위해 충분한 데이터 확보
+        all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=50)
 
         for coin in coins:
             if all_coin_data.empty:
@@ -232,18 +229,48 @@ class MultiCoinTradingSystem:
             if not coin_data.empty:
                 # 실시간 거래에서는 job_config 없이 호출
                 analysis = self.analyze_coin_signals(coin, coin_data)
-
-                if analysis['decision']['action'] != 'HOLD':
                     decision = analysis['decision']
+
+                if decision['action'] != 'HOLD':
                     active_signals.append({
-                        'coin': coin,
-                        'decision': decision,
+                        'coin': coin, 'decision': decision,
                         'price': current_prices.get(coin, 0)
                     })
 
-        if active_signals:
-            logger.info(f"📊 {len(active_signals)}개의 활성 거래 신호 발견.")
-        else:
+        # --- 거래 실행 로직 (main.py로 실행 시에만 해당) ---
+        if active_signals and not self.config.IS_BACKTEST_MODE:
+        portfolio_value = self.portfolio_manager.get_portfolio_value(current_prices)
+            current_allocations = self.portfolio_manager.get_current_allocation(current_prices)
+            target_allocations = self.config.TARGET_ALLOCATION
+
+            log_prefix = "[모의 거래]" if self.config.SIMULATION_MODE else "[실거래]"
+            logger.info(f"📊 {log_prefix} {len(active_signals)}개의 활성 신호를 기반으로 거래 검토...")
+
+            for signal in active_signals:
+                coin, decision, price = signal['coin'], signal['decision'], signal['price']
+                if not price or price <= 0: continue
+                if decision['action'] == 'BUY':
+                    target_ratio = target_allocations.get(coin, 0)
+                    current_ratio = current_allocations.get(coin, 0)
+                    if current_ratio < target_ratio:
+                        amount_to_invest = (target_ratio - current_ratio) * portfolio_value
+                        min_trade_amount = self.config.TRADING_CONFIG.get('min_trade_amount', 10000)
+
+                        if amount_to_invest > min_trade_amount:
+                            quantity = amount_to_invest / price
+                            logger.info(f"{log_prefix} {coin} 매수 실행: 수량={quantity:.6f}, 가격={price:,.2f}")
+                            if not self.config.SIMULATION_MODE:
+                                self.portfolio_manager.execute_trade(coin, 'BUY', quantity, price)
+
+                elif decision['action'] == 'SELL':
+                    position = self.portfolio_manager.coins.get(coin)
+                    if position and position.get('quantity', 0) > 0:
+                        quantity_to_sell = position['quantity'] * 0.5 # 예시: 50% 매도
+                        logger.info(f"{log_prefix} {coin} 매도 실행: 수량={quantity_to_sell:.6f}, 가격={price:,.2f}")
+                        if not self.config.SIMULATION_MODE:
+                        self.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
+
+        elif not active_signals:
             logger.info("📊 활성 거래 신호 없음.")
             
         portfolio_value = self.portfolio_manager.get_portfolio_value(current_prices)
