@@ -5,6 +5,7 @@
 import os
 from dotenv import load_dotenv
 import logging
+import json # json 모듈 추가
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -77,62 +78,96 @@ class TradingConfig:
 
         # 기술적 분석 설정
         self.TECHNICAL_ANALYSIS_CONFIG = {
-            'ma_short_period': 5,
-            'ma_long_period': 20,
-            'rsi_period': 14,
-            'bollinger_window': 20,
-            'bollinger_std_dev': 2,
-
-            'buy_signal_weights': {
-                'golden_cross': 1,
-                'rsi_oversold': 1,
-                'bb_lower': 2,
+            'buy_indicators': {
+                'MA_Cross': {
+                    'ma_short_period': 5,
+                    'ma_long_period': 20
+                },
+                'RSI': {
+                    'rsi_period': 14,
+                    'rsi_oversold_threshold': 30
+                },
+                'BollingerBand': {
+                    'bollinger_window': 20,
+                    'bollinger_std_dev': 2
+                }
             },
-            'sell_signal_weights': {
-                'dead_cross': 1,
-                'rsi_overbought_weak': 1,  # RSI 70 이상
-                'rsi_overbought_strong': 2, # RSI 80 이상
-                'bb_upper': 2,
+            'sell_indicators': {
+                'MA_Cross': {
+                    'ma_short_period': 10,
+                    'ma_long_period': 40
+                },
+                'RSI': {
+                    'rsi_period': 14,
+                    'rsi_overbought_threshold': 70
+                },
+                'BollingerBand': {
+                    'bollinger_window': 20,
+                    'bollinger_std_dev': 2
+                }
+            },
+
+            # 가중치 구조를 하나로 통합
+            'signal_weights': {
+                'MA_Cross_buy': 1,
+                'RSI_buy': 1,
+                'BollingerBand_buy': 2,
+                'MA_Cross_sell': 1,
+                'RSI_sell': 1,
+                'BollingerBand_sell': 2,
             },
 
             'buy_trigger_threshold': 2,
-            'sell_trigger_threshold': 3
+            'sell_trigger_threshold': 2 # 기본값을 2로 수정
         }
+
+        # 최적화된 파라미터 로드 시도
+        self._load_optimized_params()
 
         # 백테스팅 파라미터 최적화 설정 (Grid Search)
         self.OPTIMIZATION_CONFIG = {
-            # 1. 매수 전략 최적화 설정
+            # 1. 매수/매도에 사용할 기술 지표와 파라미터 범위 정의
             'buy_indicators': {
                 'MA_Cross': {
-                    'buy_ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-                    'buy_ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
                 },
                 'RSI': {
-                    'buy_rsi_period': {'min': 14, 'max': 21, 'step': 7},
-                    'buy_rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
+                    'rsi_period': {'min': 14, 'max': 28, 'step': 7},
+                    'rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
+                },
+                'BollingerBand': {
+                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
+                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
                 }
             },
-            'buy_trigger_threshold': {'min': 1, 'max': 2, 'step': 1},
-            'buy_signal_weights': {
-                'MA_Cross_buy': 1,
-                'RSI_buy': 1
+            'sell_indicators': {
+                'MA_Cross': {
+                    'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
+                    'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
+                },
+                'RSI': {
+                    'rsi_period': {'min': 14, 'max': 28, 'step': 7},
+                    'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
+                },
+                'BollingerBand': {
+                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
+                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
+                }
             },
 
-            # 2. 매도 전략 최적화 설정
-            'sell_indicators': {
-                'Dead_Cross': {
-                    'sell_ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-                    'sell_ma_long_period': {'min': 20, 'max': 40, 'step': 10}
-                },
-                'RSI_Sell': {
-                    'sell_rsi_period': {'min': 14, 'max': 21, 'step': 7},
-                    'sell_rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
-                }
-            },
-            'sell_trigger_threshold': {'min': 1, 'max': 2, 'step': 1},
-            'sell_signal_weights': {
-                'Dead_Cross_sell': 1,
-                'RSI_Sell_sell': 2
+            # 2. 매수/매도 신호 발생을 위한 가중치 합계 임계값 범위
+            'buy_trigger_threshold': {'min': 1, 'max': 3, 'step': 1},
+            'sell_trigger_threshold': {'min': 1, 'max': 3, 'step': 1},
+
+            # 3. 각 신호별 가중치 (고정값, 이름 통일)
+            'signal_weights': {
+                'MA_Cross_buy': 1,
+                'RSI_buy': 1,
+                'BollingerBand_buy': 2,
+                'MA_Cross_sell': 1,
+                'RSI_sell': 1,
+                'BollingerBand_sell': 2,
             }
         }
 
@@ -142,7 +177,6 @@ class TradingConfig:
             'training_period_months': 12, # 훈련 기간 (과거 12개월 데이터로 최적화)
             'testing_period_months': 3    # 검증 기간 (이후 3개월 데이터로 성과 검증)
         }
-
         # 성능 최적화 설정
         self.PERFORMANCE_CONFIG = {
             'parallel_cores': -1,  # 사용할 CPU 코어 수. -1이면 가능한 모든 코어 사용
@@ -152,6 +186,22 @@ class TradingConfig:
         self.DATA_CACHE_DIR = "data_cache"
 
         self._validate_config()
+
+    def _load_optimized_params(self):
+        """'optimized_params.json' 파일이 있으면 로드하여 기술적 분석 설정을 덮어씁니다."""
+        filepath = 'optimized_params.json'
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    optimized_params = json.load(f)
+
+                # 이제 구조가 거의 동일하므로 전체를 업데이트
+                self.TECHNICAL_ANALYSIS_CONFIG.update(optimized_params)
+                logger.info(f"✅ '{filepath}'에서 최적화된 파라미터를 로드하여 적용했습니다.")
+            except Exception as e:
+                logger.error(f"❌ '{filepath}' 파일 로드 중 오류 발생: {e}", exc_info=True)
+        else:
+            logger.info("최적화된 파라미터 파일이 없습니다. 기본 설정을 사용합니다.")
 
     def _validate_config(self):
         """설정 값의 유효성을 검사합니다."""

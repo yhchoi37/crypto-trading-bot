@@ -19,93 +19,80 @@ class TechnicalAnalysisAlgorithm:
     def __init__(self):
         pass
 
-    def generate_signal(self, historical_data: pd.DataFrame, job_config: dict) -> dict:
+    def generate_signal(self, historical_data: pd.DataFrame, indicator_combo: tuple, buy_params: dict, sell_params: dict) -> dict:
         """주어진 지표 조합과 파라미터로 신호를 생성합니다."""
-        buy_combo = job_config.get('buy_indicator_combo', ())
-        sell_combo = job_config.get('sell_indicator_combo', ())
-        params = job_config.get('params', {})
-
-        # --- 상세 로그: Job 정보 출력 ---
-        logger.debug(f"--- Running Job ---")
-        logger.debug(f"Buy Combo: {buy_combo}")
-        logger.debug(f"Sell Combo: {sell_combo}")
-        logger.debug(f"Params: {params}")
-
-        min_period = max(params.get('buy_ma_long_period', 20), params.get('sell_ma_long_period', 20))
-        if historical_data.empty or len(historical_data) < min_period:
+        required_period = max(
+            buy_params.get('MA_Cross', {}).get('ma_long_period', 20),
+            sell_params.get('MA_Cross', {}).get('ma_long_period', 20)
+        )
+        if historical_data.empty or len(historical_data) < required_period:
             return {'action': 'HOLD', 'strength': 0}
 
-        df = historical_data.copy()
-
-        # --- 1. 필요한 모든 지표 계산을 미리 수행 ---
-        try:
-            # MA Cross
-            if 'MA_Cross' in buy_combo:
-                df.ta.sma(length=params['buy_ma_short_period'], append=True)
-                df.ta.sma(length=params['buy_ma_long_period'], append=True)
-            # RSI Buy
-            if 'RSI' in buy_combo:
-                df.ta.rsi(length=params['buy_rsi_period'], append=True)
-            # Dead Cross
-            if 'Dead_Cross' in sell_combo:
-                df.ta.sma(length=params['sell_ma_short_period'], append=True)
-                df.ta.sma(length=params['sell_ma_long_period'], append=True)
-            # RSI Sell
-            if 'RSI_Sell' in sell_combo:
-                df.ta.rsi(length=params['sell_rsi_period'], append=True)
-        except Exception as e:
-            logger.error(f"지표 계산 중 오류 발생: {e}", exc_info=True)
-        return {'action': 'HOLD', 'strength': 0}
-
-        # --- 상세 로그: 생성된 컬럼 목록 출력 ---
-        logger.debug(f"Available columns after TA: {df.columns.to_list()}")
-
+        df = historical_data
         latest = df.iloc[-1]
         previous = df.iloc[-2]
-        buy_score, sell_score = 0, 0
-        weights = params.get('weights', {})
+        buy_score = 0
+        sell_score = 0
+        weights = buy_params.get('signal_weights', {})
 
-        # --- 2. 신호 점수 계산 (try-except로 감싸서 오류 추적) ---
-        try:
-            # 매수 신호
-            if 'MA_Cross' in buy_combo:
-                ma_short_col = f'SMA_{params["buy_ma_short_period"]}'
-                ma_long_col = f'SMA_{params["buy_ma_long_period"]}'
-                if latest[ma_short_col] > latest[ma_long_col] and previous[ma_short_col] <= previous[ma_long_col]:
+        # --- 매수 신호 점수 계산 (사전 계산된 컬럼 사용) ---
+        if 'MA_Cross' in indicator_combo:
+            ma_params = buy_params.get('MA_Cross', {})
+            ma_s_col = f'SMA_{ma_params.get("ma_short_period")}'
+            ma_l_col = f'SMA_{ma_params.get("ma_long_period")}'
+            if ma_s_col in df.columns and ma_l_col in df.columns:
+                if latest[ma_s_col] > latest[ma_l_col] and previous[ma_s_col] <= previous[ma_l_col]:
                     buy_score += weights.get('MA_Cross_buy', 1)
 
-            if 'RSI' in buy_combo:
-                rsi_col = f'RSI_{params["buy_rsi_period"]}'
-                if pd.notna(latest[rsi_col]) and latest[rsi_col] < params['buy_rsi_oversold_threshold']:
+        if 'RSI' in indicator_combo:
+            rsi_params = buy_params.get('RSI', {})
+            rsi_col = f'RSI_{rsi_params.get("rsi_period")}'
+            if rsi_col in df.columns:
+                if latest[rsi_col < rsi_params.get('rsi_oversold_threshold'):
                     buy_score += weights.get('RSI_buy', 1)
 
-            # 매도 신호
-            if 'Dead_Cross' in sell_combo:
-                ma_short_col = f'SMA_{params["sell_ma_short_period"]}'
-                ma_long_col = f'SMA_{params["sell_ma_long_period"]}'
-                if latest[ma_short_col] < latest[ma_long_col] and previous[ma_short_col] >= previous[ma_long_col]:
-                    sell_score += weights.get('Dead_Cross_sell', 1)
+        if 'BollingerBand' in indicator_combo:
+            bb_params = buy_params.get('BollingerBand', {})
+            bbl_col = f'BBL_{bb_params.get("bollinger_window")}_{bb_params.get("bollinger_std_dev")}.0'
+            if bbl_col in df.columns:
+                if latest['close'] < latest[bbl_col]:
+                    buy_score += weights.get('BollingerBand_buy', 1)
 
-            if 'RSI_Sell' in sell_combo:
-                rsi_col = f'RSI_{params["sell_rsi_period"]}'
-                if pd.notna(latest[rsi_col]) and latest[rsi_col] > params['sell_rsi_overbought_threshold']:
-                    sell_score += weights.get('RSI_Sell_sell', 1)
+        # --- 매도 신호 점수 계산 (사전 계산된 컬럼 사용) ---
+        if 'MA_Cross' in indicator_combo:
+            ma_params = sell_params.get('MA_Cross', {})
+            ma_s_col = f'SMA_{ma_params.get("ma_short_period")}'
+            ma_l_col = f'SMA_{ma_params.get("ma_long_period")}'
+            if ma_s_col in df.columns and ma_l_col in df.columns:
+                if latest[ma_s_col] < latest[ma_l_col] and previous[ma_s_col] >= previous[ma_l_col]:
+                    sell_score += weights.get('MA_Cross_sell', 1)
 
-        except KeyError as e:
-            # --- 상세 로그: KeyError 발생 시점의 상세 정보 출력 ---
-            logger.error(f"!!! KeyError while accessing signal data: {e}")
-            logger.error(f"Failed to find key: {e.args[0]}")
-            logger.error(f"Current available columns: {df.columns.to_list()}")
-            logger.error(f"Job that caused error: {job_config}")
-            return {'action': 'HOLD', 'strength': 0} # 오류 발생 시 거래 중단
+        if 'RSI' in indicator_combo:
+            rsi_params = sell_params.get('RSI', {})
+            rsi_col = f'RSI_{rsi_params.get("rsi_period")}'
+            if rsi_col in df.columns:
+                if latest[rsi_col] > rsi_params.get('rsi_overbought_threshold'):
+                    sell_score += weights.get('RSI_sell', 1)
+
+        if 'BollingerBand' in indicator_combo:
+            bb_params = sell_params.get('BollingerBand', {})
+            bbu_col = f'BBU_{bb_params.get("bollinger_window")}_{bb_params.get("bollinger_std_dev")}.0'
+            if bbu_col in df.columns:
+                if latest['close'] > latest[bbu_col]:
+                    sell_score += weights.get('BollingerBand_sell', 1)
 
         # --- 최종 결정 ---
-        if buy_score >= params.get('buy_trigger_threshold', 99):
-            return {'action': 'BUY', 'strength': buy_score}
-        if sell_score >= params.get('sell_trigger_threshold', 99):
-            return {'action': 'SELL', 'strength': sell_score}
+        buy_trigger = buy_params.get('buy_trigger_threshold', 99)
+        sell_trigger = sell_params.get('sell_trigger_threshold', 99)
+        is_buy_signal = buy_score >= buy_trigger
+        is_sell_signal = sell_score >= sell_trigger
 
-        return {'action': 'HOLD', 'strength': 0}
+        if is_buy_signal and not is_sell_signal:
+            return {'action': 'BUY', 'strength': buy_score}
+        elif is_sell_signal and not is_buy_signal:
+            return {'action': 'SELL', 'strength': sell_score}
+        else:
+            return {'action': 'HOLD', 'strength': 0}
 
 
 class MultiCoinTradingSystem:
@@ -125,15 +112,14 @@ class MultiCoinTradingSystem:
         """알고리즘 설정"""
         logger.info("🔧 거래 알고리즘 설정 중...")
         enabled_coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH']
-
         if self.config.BACKTEST_MODE:
             # 백테스트 모드: 기술적 분석 알고리즘 객체만 생성 (파라미터는 실행 시 주입)
             tech_algo = TechnicalAnalysisAlgorithm()
             self.algorithms['technical_analysis'] = {
                 'algorithm': tech_algo,
-            'weight': 1.0,
-            'enabled_coins': enabled_coins
-        }
+                'weight': 1.0,
+                'enabled_coins': enabled_coins
+            }
             logger.info("📈 백테스트 모드 활성화. 기술적 분석 알고리즘을 사용합니다.")
         else:
             # 실시간 거래 모드: 소셜 센티멘트 알고리즘 사용
@@ -154,14 +140,46 @@ class MultiCoinTradingSystem:
 
     def analyze_coin_signals(self, coin: str, data: pd.DataFrame, job_config: dict = None) -> dict:
         """특정 코인에 대한 종합 신호 분석 (백테스트 시 파라미터 주입 가능)"""
-        if self.config.BACKTEST_MODE:
-            tech_algo_info = self.algorithms.get('technical_analysis')
-            if tech_algo_info and coin in tech_algo_info['enabled_coins']:
-                algo = tech_algo_info['algorithm']
-                if job_config:
-                    return {'decision': algo.generate_signal(data, job_config)}
-
+        tech_algo_info = self.algorithms.get('technical_analysis')
+        if not tech_algo_info or coin not in tech_algo_info.get('enabled_coins', []):
         return {'decision': {'action': 'HOLD', 'strength': 0}}
+
+        algo = tech_algo_info['algorithm']
+
+        if self.config.BACKTEST_MODE and job_config:
+            # 백테스트: job_config에서 파라미터 추출
+            buy_params = {
+                'buy_trigger_threshold': job_config.get('buy_trigger_threshold'),
+                'signal_weights': job_config.get('signal_weights', {}),
+                **job_config.get('buy_indicators', {})
+            }
+            sell_params = {
+                'sell_trigger_threshold': job_config.get('sell_trigger_threshold'),
+                'signal_weights': job_config.get('signal_weights', {}),
+                **job_config.get('sell_indicators', {})
+            }
+            buy_indicator_combo = tuple(job_config.get('buy_indicators', {}).keys())
+            sell_indicator_combo = tuple(job_config.get('sell_indicators', {}).keys())
+            indicator_combo = tuple(set(buy_indicator_combo) | set(sell_indicator_combo))
+        else:
+            # 실시간 거래 또는 기본 설정: config에서 파라미터 추출
+            config_params = self.config.TECHNICAL_ANALYSIS_CONFIG
+            buy_params = {
+                'buy_trigger_threshold': config_params.get('buy_trigger_threshold'),
+                'signal_weights': config_params.get('signal_weights', {}),
+                **config_params.get('buy_indicators', {})
+            }
+            sell_params = {
+                'sell_trigger_threshold': config_params.get('sell_trigger_threshold'),
+                'signal_weights': config_params.get('signal_weights', {}),
+                **config_params.get('sell_indicators', {})
+            }
+            buy_indicator_combo = tuple(config_params.get('buy_indicators', {}).keys())
+            sell_indicator_combo = tuple(config_params.get('sell_indicators', {}).keys())
+            indicator_combo = tuple(set(buy_indicator_combo) | set(sell_indicator_combo))
+
+        signal = algo.generate_signal(data, indicator_combo, buy_params, sell_params)
+        return {'decision': signal}
 
     def run_trading_cycle(self) -> dict:
         """한 번의 거래 사이클 실행"""
@@ -174,20 +192,20 @@ class MultiCoinTradingSystem:
         active_signals = []
 
         # 모든 코인 데이터를 한 번에 가져오도록 수정
-        all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=30) # 백테스팅과 유사하게 데이터 기간 확보
+        all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=50) # MA 계산을 위해 충분한 데이터 확보
 
         for coin in coins:
             if all_coin_data.empty:
                 logger.warning(f"{coin}에 대한 데이터를 가져올 수 없습니다.")
                 continue
-            # 오류 수정: 닫는 괄호 추가
+
             coin_data = all_coin_data[all_coin_data['coin'] == coin]
             if not coin_data.empty:
-                # 실시간 거래에서는 기본 파라미터로 신호 분석 (job_config 없음)
+                # 실시간 거래에서는 job_config 없이 호출
                 analysis = self.analyze_coin_signals(coin, coin_data)
 
                 if analysis['decision']['action'] != 'HOLD':
-                    decision = analysis['decision']
+                    decision = analysis['decision'
                     active_signals.append({
                         'coin': coin,
                         'decision': decision,
