@@ -141,7 +141,8 @@ class BacktestRunner:
             current_data_slice = self.historical_data.loc[self.historical_data.index == current_ts]
             current_prices = {row['coin']: row['close'] for _, row in current_data_slice.iterrows()}
             
-            trading_system.portfolio_manager.check_risk_management(current_prices)
+            # check_risk_management 호출 시 현재 시간(current_ts)을 함께 전달
+            trading_system.portfolio_manager.check_risk_management(current_prices, current_ts)
 
             for coin in [c for c in target_allocations if c != 'CASH']:
                 if coin not in current_prices: continue
@@ -161,7 +162,7 @@ class BacktestRunner:
                 has_position = position and position.get('quantity', 0) > 0
 
                 if action == 'CONFLICT':
-                    logger.debug(f"[{ts_str}] CONFLICT signal for {coin}. Position: {'Yes' if has_position else 'No'}.")
+                    logger.debug(f"[{ts_str}][{coin}] CONFLICT. Position: {'Yes' if has_position else 'No'}.")
                     action = 'SELL' if has_position else 'BUY'
 
                 if action == 'BUY':
@@ -173,17 +174,17 @@ class BacktestRunner:
                         amount_to_invest = (target_ratio - current_ratio) * portfolio_value_before_trade
                         max_investment_per_trade = trading_system.portfolio_manager.cash * 0.1
                         final_investment = min(amount_to_invest, max_investment_per_trade)
-                        logger.debug(f"[{ts_str}] BUY signal for {coin}: Target({target_ratio:.2%}) > Current({current_ratio:.2%}). Attempting to invest ~${final_investment:,.2f}.")
-                        trading_system.portfolio_manager.execute_trade(coin, 'BUY', final_investment / price, price)
+                        logger.debug(f"[{ts_str}][{coin}] BUY : Target({target_ratio:.2%}) > Current({current_ratio:.2%}). Attempting to invest ~${final_investment:,.2f}.")
+                        trading_system.portfolio_manager.execute_trade(coin, 'BUY', final_investment / price, price, current_ts)
                     else:
-                        logger.debug(f"[{ts_str}] BUY signal for {coin} IGNORED: Target({target_ratio:.2%}) <= Current({current_ratio:.2%}).")
+                        logger.debug(f"[{ts_str}][{coin}] BUY IGNORED: Target({target_ratio:.2%}) <= Current({current_ratio:.2%}).")
                 elif action == 'SELL':
                     if has_position:
                         quantity_to_sell = position['quantity'] * 0.5
-                        logger.debug(f"[{ts_str}] SELL signal for {coin}: Attempting to sell {quantity_to_sell:.6f} coins.")
-                        trading_system.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
+                        logger.debug(f"[{ts_str}][{coin}] SELL : Attempting to sell {quantity_to_sell:.6f} coins.")
+                        trading_system.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price, current_ts)
                     else:
-                        logger.debug(f"[{ts_str}] SELL signal for {coin} IGNORED: No position to sell.")
+                        logger.debug(f"[{ts_str}][{coin}] SELL IGNORED: No position to sell.")
 
             # --- 포트폴리오 스냅샷 기록 ---
             portfolio_value = trading_system.portfolio_manager.get_portfolio_value(current_prices)
@@ -557,8 +558,8 @@ def main():
     
     logger.info("🚀 백테스트 시스템 시작")
     START_DATE = "2022-01-01"
-    END_DATE = "2023-12-31"
-    INITIAL_BALANCE = 10000000.0 # 하드코딩된 값 (추후 .env 등으로 관리 가능)
+    END_DATE = "2025-06-30"
+    INITIAL_BALANCE = config.INITIAL_BALANCE
 
     try:
         if args.single:
@@ -584,7 +585,13 @@ def main():
             runner = BacktestRunner(INITIAL_BALANCE, precomputed_data, config)
             result = runner.run(job_config)
             if result:
-                report_final_results(datetime.strptime(START_DATE, '%Y-%m-%d'), datetime.strptime(END_DATE, '%Y-%m-%d'), INITIAL_BALANCE, result, prefix="SingleRun")
+                report_final_results(
+                    datetime.strptime(START_DATE, '%Y-%m-%d'), 
+                    datetime.strptime(END_DATE, '%Y-%m-%d'), 
+                    INITIAL_BALANCE, 
+                    result, 
+                    prefix="SingleRun"
+                )
         else:
             logger.info("전진 분석 최적화를 시작합니다.")
             wfo = WalkForwardOptimizer(START_DATE, END_DATE, INITIAL_BALANCE)
@@ -600,3 +607,4 @@ if __name__ == "__main__":
     # Windows/macOS에서 multiprocessing 사용 시 필요
     mp.freeze_support()
     sys.exit(main())
+
