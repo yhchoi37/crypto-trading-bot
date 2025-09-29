@@ -139,7 +139,7 @@ class MultiCoinTradingSystem:
         시스템을 초기화합니다.
         config 객체가 주입되지 않으면 새로 생성합니다.
         """
-        logger.info(f"🚀 트레이딩 시스템 초기화 - 초기 자본: ￦{initial_balance:,.2f}")
+        logger.info(f"🚀 트레이딩 시스템 초기화 - 초기 자본: ￦{initial_balance:,.0f}")
         self.config = config if config else TradingConfig()
         self.portfolio_manager = MultiCoinPortfolioManager()
         self.data_manager = MultiCoinDataManager()
@@ -258,7 +258,7 @@ class MultiCoinTradingSystem:
                 coin, decision, price = signal['coin'], signal['decision'], signal['price']
                 if not price or price <= 0: continue
                 action = decision['action']
-                    position = self.portfolio_manager.coins.get(coin)
+                position = self.portfolio_manager.coins.get(coin)
                 has_position = position and position.get('quantity', 0) > 0
 
                 # CONFLICT 신호 처리 로직

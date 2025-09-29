@@ -54,6 +54,7 @@ class MultiCoinPortfolioManager:
         if not last_trade_time:
             return False # 거래 기록 없음
 
+        # TODO:데이터 최소 시간에 맞춰 수정 필요
         cooldown_minutes = coin_cd.get('minutes', 60)
         time_since_last_trade = current_time - last_trade_time
 
@@ -62,8 +63,7 @@ class MultiCoinPortfolioManager:
                         f"마지막 거래 후 {time_since_last_trade.total_seconds() / 60:.1f}분 경과 "
                         f"(필요: {cooldown_minutes}분)")
             return True
-
-                    return False
+        return False
 
     def execute_trade(self, symbol: str, action: str, quantity: float, price: float, current_time: datetime):
         """중앙화된 거래 실행 및 리스크 관리"""
@@ -160,7 +160,7 @@ class MultiCoinPortfolioManager:
 
     def check_risk_management(self, prices: dict, current_time: datetime):
         """보유 포지션에 대한 손절/익절 조건 확인 및 실행"""
-        rm_config = self.config.RISK_MANAGEMENT_CONFIG
+        rm_config = self.config.RISK_MANAGEMENT
         default_rm = rm_config.get('default', {'enabled': False})
         # 반복 중 딕셔너리 변경을 피하기 위해 키 목록 복사
         for symbol in list(self.coins.keys()):
