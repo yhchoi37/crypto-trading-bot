@@ -50,13 +50,13 @@ class TradingConfig:
 
         # 지원 코인 설정
         self.SUPPORTED_COINS = [
-            'BTC', 'ETH', 'XRP', 'ADA', 'DOGE',
-            'SOL', 'DOT', 'LINK', 'LTC', 'MATIC'
+            'BTC', 'ETH', 'XRP', 'ADA',
+            'SOL', 'DOT', 'LINK',
         ]
         # 포트폴리오 목표 배분
         self.TARGET_ALLOCATION = {
-            'BTC': 0.30, 'ETH': 0.25, 'XRP': 0.20, 'ADA': 0.05,
-            'SOL': 0.10, 'CASH': 0.10
+            'BTC': 0.30, 'ETH': 0.30, 'XRP': 0.20,
+            'SOL': 0.19, 'CASH': 0.01
         }
 
         # 센티멘트 분석 설정
@@ -70,10 +70,25 @@ class TradingConfig:
         # 거래 전략 설정
         self.TRADING_CONFIG = {
             'buy_threshold': 0.6, 'sell_threshold': 0.6,
-            'min_trade_amount': 10000, 'max_slippage': 0.02,
-            'stop_loss_percent': 0.05,   # 5% 손실 시 손절
-            'take_profit_percent': 0.10, # 10% 이익 시 익절
+            'min_trade_amount': 5000, 'max_slippage': 0.02,
             'transaction_fee_percent': 0.001
+        }
+
+        # 리스크 관리 설정 (코인별 손절/익절 및 쿨다운)
+        self.RISK_MANAGEMENT = {
+            'default': {
+                'enabled': True,
+                'stop_loss_percent': 0.05,   # 5% 손실 시 손절
+                'take_profit_percent': 0.10, # 10% 이익 시 익절
+                'cooldown_period': 4   # 거래 후 4시간 동안 추가 거래 방지
+            },
+            'BTC': {
+                'stop_loss_percent': 0.07,  # BTC는 손절 라인을 7%로 다르게 설정
+                'cooldown_period': 2  # BTC는 쿨다운을 2시간으로 짧게 설정
+            },
+            'ETH': {
+                'enabled': False  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
+            }
         }
 
         # 백테스팅 시간 단위 설정
@@ -160,15 +175,23 @@ class TradingConfig:
             # },
             'buy_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 5, 'max': 10, 'step': 5},
-                    'ma_long_period': {'min': 30, 'max': 40, 'step': 10}
+                    'ma_short_period': {'min': 10, 'max': 30, 'step': 5},
+                    'ma_long_period': {'min': 60, 'max': 90, 'step': 10}
                 },
+                'BollingerBand': {
+                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
+                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
+                }
             },
             'sell_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 5, 'max': 10, 'step': 5},
-                    'ma_long_period': {'min': 30, 'max': 40, 'step': 10}
+                    'ma_short_period': {'min': 10, 'max': 30, 'step': 5},
+                    'ma_long_period': {'min': 30, 'max': 40, 'step': 5}
                 },
+                'BollingerBand': {
+                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
+                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
+                }
             },
 
             # 2. 매수/매도 신호 발생을 위한 가중치 합계 임계값 범위
@@ -240,5 +263,13 @@ class TradingConfig:
                 f"다음 코인은 지원되지만 목표 배분이 설정되지 않았습니다: {', '.join(unallocated_coins)}"
             )
 
+        # 4. 리스크 관리 설정 검증
+        for coin, settings in self.RISK_MANAGEMENT.items():
+            if coin == 'default':
+                continue
+            if coin not in self.SUPPORTED_COINS:
+                raise ValueError(f"리스크 관리에 설정된 '{coin}'은(는) 지원하는 코인이 아닙니다.")
+            if not isinstance(settings, dict):
+                raise ValueError(f"'{coin}'의 리스크 관리 설정이 올바른 형식이 아닙니다 (딕셔너리 필요).")
         logger.info("✅ 설정 파일 유효성 검사 완료")
 
