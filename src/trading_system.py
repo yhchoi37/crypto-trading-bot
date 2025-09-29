@@ -105,20 +105,30 @@ class TechnicalAnalysisAlgorithm:
 
         action = 'HOLD'
         strength = 0
-        if is_buy_signal and not is_sell_signal:
+        if is_buy_signal and is_sell_signal:
+            action = 'CONFLICT'
+            strength = max(buy_score, sell_score) # 둘 중 더 강한 신호의 점수를 강도로 사용
+        elif is_buy_signal:
             action, strength = 'BUY', buy_score
-        elif is_sell_signal and not is_buy_signal:
+        elif is_sell_signal:
             action, strength = 'SELL', sell_score
 
         # 상세 로그 출력 (점수가 0보다 클 때만)
         if buy_score > 0 or sell_score > 0:
-            date_str = latest.name.strftime('%Y-%m-%d %H:%M:%S') if isinstance(latest.name, pd.Timestamp) else str(latest.name)
+            coin_symbol = df['coin'].iloc[-1] # 데이터프레임에서 코인 심볼 가져오기
+            # latest.name이 timestamp 객체인지 확인하고 포맷팅
+            if isinstance(latest.name, pd.Timestamp):
+                timestamp_str = latest.name.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                timestamp_str = str(latest.name)
+
             logger.debug(
-                f"[{date_str}] Signal Eval: "
+                f"[{timestamp_str}[{coin_symbol}] Signal Eval: "
                 f"Scores(Buy:{buy_score}/Sell:{sell_score}) | "
                 f"Triggers(Buy:{buy_trigger}/Sell:{sell_trigger}) | "
                 f"Final Action: {action} | Details: {', '.join(log_msg_details)}"
             )
+
         return {'action': action, 'strength': strength}
 
 
@@ -216,7 +226,7 @@ class MultiCoinTradingSystem:
 
         coins = [coin for coin in self.config.TARGET_ALLOCATION if coin != 'CASH']
         current_prices = self.data_manager.get_coin_prices(coins)
-        
+
         active_signals = []
         all_coin_data = self.data_manager.generate_multi_coin_data(coins, days=50)
 
@@ -230,7 +240,6 @@ class MultiCoinTradingSystem:
                 # 실시간 거래에서는 job_config 없이 호출
                 analysis = self.analyze_coin_signals(coin, coin_data)
                 decision = analysis['decision']
-
                 if decision['action'] != 'HOLD':
                     active_signals.append({
                         'coin': coin, 'decision': decision,
@@ -245,11 +254,20 @@ class MultiCoinTradingSystem:
 
             log_prefix = "[모의 거래]" if self.config.SIMULATION_MODE else "[실거래]"
             logger.info(f"📊 {log_prefix} {len(active_signals)}개의 활성 신호를 기반으로 거래 검토...")
-
             for signal in active_signals:
                 coin, decision, price = signal['coin'], signal['decision'], signal['price']
                 if not price or price <= 0: continue
-                if decision['action'] == 'BUY':
+                action = decision['action']
+                    position = self.portfolio_manager.coins.get(coin)
+                has_position = position and position.get('quantity', 0) > 0
+
+                # CONFLICT 신호 처리 로직
+                if action == 'CONFLICT':
+                    # 포지션이 있으면 매도, 없으면 매수
+                    action = 'SELL' if has_position else 'BUY'
+                    logger.info(f"{log_prefix} {coin}의 신호 충돌 발생. 포지션 보유 여부({has_position})에 따라 '{action}'으로 결정.")
+
+                if action == 'BUY':
                     target_ratio = target_allocations.get(coin, 0)
                     current_ratio = current_allocations.get(coin, 0)
                     if current_ratio < target_ratio:
@@ -261,10 +279,11 @@ class MultiCoinTradingSystem:
                             logger.info(f"{log_prefix} {coin} 매수 실행: 수량={quantity:.6f}, 가격={price:,.2f}")
                             if not self.config.SIMULATION_MODE:
                                 self.portfolio_manager.execute_trade(coin, 'BUY', quantity, price)
+                        else:
+                            logger.warning(f"{log_prefix} {coin} 최소 거래 금액 {min_trade_amount} 미만으로 실패: {amount_to_invest}")
 
-                elif decision['action'] == 'SELL':
-                    position = self.portfolio_manager.coins.get(coin)
-                    if position and position.get('quantity', 0) > 0:
+                elif action == 'SELL':
+                    if has_position:
                         quantity_to_sell = position['quantity'] * 0.5 # 예시: 50% 매도
                         logger.info(f"{log_prefix} {coin} 매도 실행: 수량={quantity_to_sell:.6f}, 가격={price:,.2f}")
                         if not self.config.SIMULATION_MODE:

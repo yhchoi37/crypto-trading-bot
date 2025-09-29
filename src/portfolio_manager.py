@@ -3,7 +3,7 @@
 다중 코인 포트폴리오 관리 모듈
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from config.settings import TradingConfig
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,7 @@ class MultiCoinPortfolioManager:
         self.coins = {}  # {symbol: {'quantity': float, 'avg_buy_price': float}}
         self.target_allocation = self.config.TARGET_ALLOCATION
         self.trade_history = []
+        self.last_trade_times = {} # 코인별 마지막 거래 시간 기록
 
     def set_target_allocation(self, allocation: dict):
         """목표 자산 비중 설정"""
@@ -40,7 +41,31 @@ class MultiCoinPortfolioManager:
             return self.cash
         return self.cash + sum(prices.get(sym, 0) * pos.get('quantity', 0) for sym, pos in self.coins.items())
 
-    def execute_trade(self, symbol: str, action: str, quantity: float, price: float):
+    def is_cooldown_active(self, symbol: str, current_time: datetime) -> bool:
+        """주어진 코인이 현재 거래 쿨다운 상태인지 확인"""
+        cd_config = self.config.COOLDOWN_CONFIG
+        default_cd = cd_config.get('default', {'enabled': False})
+        coin_cd = cd_config.get(symbol, default_cd)
+
+        if not coin_cd.get('enabled', False):
+            return False # 쿨다운 비활성화
+
+        last_trade_time = self.last_trade_times.get(symbol)
+        if not last_trade_time:
+            return False # 거래 기록 없음
+
+        cooldown_minutes = coin_cd.get('minutes', 60)
+        time_since_last_trade = current_time - last_trade_time
+
+        if time_since_last_trade < timedelta(minutes=cooldown_minutes):
+            logger.debug(f"[{symbol} 쿨다운 활성화 중. "
+                        f"마지막 거래 후 {time_since_last_trade.total_seconds() / 60:.1f}분 경과 "
+                        f"(필요: {cooldown_minutes}분)")
+            return True
+
+                    return False
+
+    def execute_trade(self, symbol: str, action: str, quantity: float, price: float, current_time: datetime):
         """중앙화된 거래 실행 및 리스크 관리"""
         if quantity <= 0 or price <= 0:
             logger.warning(f"유효하지 않은 거래 시도: {symbol} 수량={quantity}, 가격={price}")
@@ -51,16 +76,30 @@ class MultiCoinPortfolioManager:
         total_portfolio_value = self.get_portfolio_value({symbol: price})
 
         if action.upper() == 'BUY':
-            # 1. 최대 포지션 크기 확인
+            # 1. 최대 포지션 크기 확인 및 조정
             max_position_value = total_portfolio_value * self.config.MAX_POSITION_SIZE
             current_position_value = self.coins.get(symbol, {}).get('quantity', 0) * price
+
             if current_position_value + trade_value > max_position_value:
-                logger.warning(
-                    f"{symbol} 매수 불가: 최대 포지션 크기 초과. "
-                    f"(현재: ${current_position_value:,.2f}, 추가: ${trade_value:,.2f}, "
-                    f"한도: ${max_position_value:,.2f})"
+                # 매수 가능한 최대 금액 계산
+                adjusted_trade_value = max_position_value - current_position_value
+
+                # 조정된 금액이 최소 거래 금액보다 큰지 확인
+                min_trade_amount = self.config.TRADING_CONFIG.get('min_trade_amount', 5000)
+                if adjusted_trade_value < min_trade_amount:
+                    logger.warning(
+                        f"{symbol} 매수 취소: 최대 포지션 크기 도달 후 조정된 금액이 최소 거래 금액 미만입니다. "
+                        f"(가용 한도: ${adjusted_trade_value:,.2f}, 최소 거래액: ${min_trade_amount:,.2f})"
+                    )
+                    return False
+                logger.info(
+                    f"INFO: {symbol} 매수 수량 조정: 최대 포지션 크기 초과. "
+                    f"(요청액: ${trade_value:,.2f} -> 조정액: ${adjusted_trade_value:,.2f})"
                 )
-                return False
+                # 조정된 값으로 수량, 거래액, 수수료를 다시 계산
+                quantity = adjusted_trade_value / price
+                trade_value = adjusted_trade_value
+                fee = trade_value * self.config.TRADING_CONFIG.get('transaction_fee_percent', 0.001)
 
             # 2. 현금 잔고 확인
             if self.cash < trade_value + fee:
@@ -107,25 +146,37 @@ class MultiCoinPortfolioManager:
 
         # 거래 기록
         self.trade_history.append({
-            'timestamp': datetime.now(), 'symbol': symbol, 'action': action.upper(),
+            'timestamp': current_time, 'symbol': symbol, 'action': action.upper(),
             'qty': quantity, 'price': price, 'value': trade_value, 'fee': fee
         })
+        # 거래 성공 시, 마지막 거래 시간 기록
+        self.last_trade_times[symbol] = current_time
+
         logger.info(
             f"거래 실행: {symbol} {'매수' if action.upper() == 'BUY' else '매도'} | "
             f"수량: {quantity:.6f} | 가격: {price:,.2f} | 수수료: {fee:,.2f}"
         )
         return True
 
-    def check_risk_management(self, prices: dict):
+    def check_risk_management(self, prices: dict, current_time: datetime):
         """보유 포지션에 대한 손절/익절 조건 확인 및 실행"""
-        stop_loss_pct = self.config.TRADING_CONFIG.get('stop_loss_percent')
-        take_profit_pct = self.config.TRADING_CONFIG.get('take_profit_percent')
-
+        rm_config = self.config.RISK_MANAGEMENT_CONFIG
+        default_rm = rm_config.get('default', {'enabled': False})
         # 반복 중 딕셔너리 변경을 피하기 위해 키 목록 복사
         for symbol in list(self.coins.keys()):
             position = self.coins.get(symbol)
             if not position or 'avg_buy_price' not in position:
                 continue
+
+            # 코인별 설정 가져오기 (없으면 기본 설정 사용)
+            coin_rm = rm_config.get(symbol, default_rm)
+
+            # 리스크 관리가 비활성화된 경우 다음 코인으로 건너뛰기
+            if not coin_rm.get('enabled', False):
+                continue
+
+            stop_loss_pct = coin_rm.get('stop_loss_percent')
+            take_profit_pct = coin_rm.get('take_profit_percent')
 
             current_price = prices.get(symbol)
             avg_buy_price = position['avg_buy_price']
@@ -133,28 +184,27 @@ class MultiCoinPortfolioManager:
 
             if not current_price or avg_buy_price <= 0:
                 continue
-
             # 수익률 계산
             pnl_percent = (current_price - avg_buy_price) / avg_buy_price
 
-            # 손절 조건 확인
-            if stop_loss_pct and pnl_percent <= -stop_loss_pct:
+            # 손절 조건 확인 (None이 아니고, 조건 충족 시)
+            if stop_loss_pct is not None and pnl_percent <= -stop_loss_pct:
                 logger.info(
-                    f"🚨 손절매 실행: {symbol} | "
-                    f"수익률: {pnl_percent:.2%} (목표: -{stop_loss_pct:.2%})"
+                    f"🚨 손절매 실행 ({symbol}): "
+                    f"수익률 {pnl_percent:.2%} (목표: -{stop_loss_pct:.2%})"
                 )
-                self.execute_trade(symbol, 'SELL', quantity, current_price)
-                continue # 다음 코인으로
+                self.execute_trade(symbol, 'SELL', quantity, current_price, current_time)
+                continue # 손절매 실행 후에는 추가 익절 검사 없이 다음 코인으로
 
-            # 이익 실현 조건 확인
-            if take_profit_pct and pnl_percent >= take_profit_pct:
+            # 이익 실현 조건 확인 (None이 아니고, 조건 충족 시)
+            if take_profit_pct is not None and pnl_percent >= take_profit_pct:
                 logger.info(
-                    f"💰 이익 실현 실행: {symbol} | "
-                    f"수익률: {pnl_percent:.2%} (목표: +{take_profit_pct:.2%})"
+                    f"💰 이익 실현 실행 ({symbol}): "
+                    f"수익률 {pnl_percent:.2%} (목표: +{take_profit_pct:.2%})"
                 )
-                self.execute_trade(symbol, 'SELL', quantity, current_price)
+                self.execute_trade(symbol, 'SELL', quantity, current_price, current_time)
 
-    def perform_rebalancing(self, prices: dict):
+    def perform_rebalancing(self, prices: dict, current_time: datetime):
         """리밸런싱 로직 (execute_trade 사용)"""
         total_value = self.get_portfolio_value(prices)
         logger.info(f"리밸런싱 시작 (포트폴리오 가치: ${total_value:,.2f})")
@@ -174,9 +224,9 @@ class MultiCoinPortfolioManager:
 
             quantity_to_trade = abs(diff_value) / price
             if diff_value > 0:
-                self.execute_trade(sym, 'BUY', quantity_to_trade, price)
+                self.execute_trade(sym, 'BUY', quantity_to_trade, price, current_time)
             else:
-                self.execute_trade(sym, 'SELL', quantity_to_trade, price)
+                self.execute_trade(sym, 'SELL', quantity_to_trade, price, current_time)
 
     def get_portfolio_summary(self, prices=None):
         """간단한 포트폴리오 요약"""
