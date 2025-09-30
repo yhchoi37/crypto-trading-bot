@@ -65,6 +65,15 @@ class MultiCoinPortfolioManager:
             return True
         return False
 
+    def calculate_trading_fee(self, trade_value: float, order_type: str) -> float:
+        """주문 유형에 따른 수수료 계산"""
+        if order_type == 'LIMIT':  # 메이커 주문
+            fee_rate = self.config.TRADING_CONFIG.get('maker_fee_percent', 0.0005)
+        else:  # 'MARKET' - 테이커 주문
+            fee_rate = self.config.TRADING_CONFIG.get('taker_fee_percent', 0.001)
+        
+        return trade_value * fee_rate
+
     def execute_trade(self, symbol: str, action: str, quantity: float, price: float, current_time: datetime):
         """중앙화된 거래 실행 및 리스크 관리"""
         if quantity <= 0 or price <= 0:

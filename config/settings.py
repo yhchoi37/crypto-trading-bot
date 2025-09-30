@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 class TradingConfig:
     """트레이딩 시스템 설정 클래스"""
     def __init__(self):
+        # 설정 버전 관리
+        self.CONFIG_VERSION = '0.1.0'
+        self.MIN_COMPATIBLE_VERSION = '0.1.0'
+
         # 로그 레벨 (DEBUG, INFO, WARNING, ERROR)
         self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
         
@@ -69,9 +73,50 @@ class TradingConfig:
         
         # 거래 전략 설정
         self.TRADING_CONFIG = {
-            'buy_threshold': 0.6, 'sell_threshold': 0.6,
-            'min_trade_amount': 5000, 'max_slippage': 0.02,
+            'buy_threshold': 0.6,
+            'sell_threshold': 0.6,
+            'min_trade_amount': 5000,
+            'max_slippage': 0.002,          # 0.2% 슬리피지
+            'maker_fee_percent': 0.0005,   # 메이커 수수료
+            'taker_fee_percent': 0.001,    # 테이커 수수료
             'transaction_fee_percent': 0.001
+        }
+
+        # 동적 포지션 사이징
+        self.POSITION_SIZING = {
+            'method': 'fixed',  # 'fixed', 'kelly', 'atr_based'
+            'fixed_percent': 0.15,
+            'kelly_fraction': 0.5,  # Kelly의 절반만 사용 (보수적)
+            'atr_multiplier': 2.0,
+            'max_position_percent': 0.25,  # 절대 최대값
+        }
+
+        # 거래 시간 제한: 암호화폐는 24/7 거래되지만, 특정 시간대(예: 미국 장 마감 후)에만 거래하는 옵션
+        self.TRADING_HOUR = {
+            'enabled': False,
+            'timezone': 'Asia/Seoul',
+            'allowed_hours': [(9, 18)],  # 9시-18시만 거래
+            'excluded_days': ['Saturday', 'Sunday']
+        }
+
+        # 최대 드로다운 알림: 특정 임계값 초과 시 자동으로 거래를 중단하거나 알림을 보내는 기능
+        self.DRAWDOWN_CONFIG = {
+            'max_drawdown_percent': 0.20,  # 20% 낙폭 시 거래 중단
+            'warning_threshold': 0.15,     # 15% 낙폭 시 경고 알림
+            'recovery_mode': True,         # 회복 모드에서는 거래량 50% 감소
+        }
+
+        # 코인별 변동성 임계값: 변동성이 너무 높을 때 거래를 중단
+
+        self.VOLATILITY_FILTER = {
+            'default': {
+                'enabled': True,
+                'atr_threshold': 5.0,  # ATR이 5% 초과 시 거래 제한
+                'lookback_period': 24  # 24시간 기준
+            },
+            'BTC': {
+                'enabled': False,
+            },
         }
 
         # 리스크 관리 설정 (코인별 손절/익절 및 쿨다운)
@@ -80,7 +125,10 @@ class TradingConfig:
                 'enabled': True,
                 'stop_loss_percent': 0.05,   # 5% 손실 시 손절
                 'take_profit_percent': 0.10, # 10% 이익 시 익절
-                'cooldown_period': 4   # 거래 후 4시간 동안 추가 거래 방지
+                'cooldown_period': 4,        # 거래 후 4시간 동안 추가 거래 방지
+                'daily_loss_limit': 0.03,    # 일일 3% 손실 시 거래 중단
+                'weekly_loss_limit': 0.10,   # 주간 10% 손실 시 거래 중단
+                'consecutive_loss_limit': 3,  # 연속 3회 손실 시 일시 중지
             },
             'BTC': {
                 'stop_loss_percent': 0.07,  # BTC는 손절 라인을 7%로 다르게 설정
@@ -90,6 +138,14 @@ class TradingConfig:
                 'enabled': False  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
             }
         }
+
+        # 백테스트 vs 실거래 설정 분리
+        if self.IS_BACKTEST_MODE:
+            self.BACKTEST_SPECIFIC = {
+                'commission_model': 'percentage',
+                'slippage_model': 'fixed',
+                'use_bid_ask_spread': True
+            }
 
         # 백테스팅 시간 단위 설정
         self.BACKTEST_INTERVAL = 'minute60' # 'day', 'minute240', 'minute60' 등 pyupbit에서 지원하는 interval

@@ -12,6 +12,7 @@ __pycache__/
 # 로그 파일
 logs/
 *.log
+nohup.out
 
 # 데이터 폴더
 data_cache/
