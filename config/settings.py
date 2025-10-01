@@ -58,9 +58,12 @@ class TradingConfig:
             'SOL', 'DOT', 'LINK',
         ]
         # 포트폴리오 목표 배분
+        # self.TARGET_ALLOCATION = {
+        #     'BTC': 0.30, 'ETH': 0.30, 'XRP': 0.20,
+        #     'SOL': 0.19, 'CASH': 0.01
+        # }
         self.TARGET_ALLOCATION = {
-            'BTC': 0.30, 'ETH': 0.30, 'XRP': 0.20,
-            'SOL': 0.19, 'CASH': 0.01
+            'BTC': 0.50, 'ETH': 0.49, 'CASH': 0.01
         }
 
         # 센티멘트 분석 설정
@@ -79,7 +82,6 @@ class TradingConfig:
             'max_slippage': 0.002,          # 0.2% 슬리피지
             'maker_fee_percent': 0.0005,   # 메이커 수수료
             'taker_fee_percent': 0.001,    # 테이커 수수료
-            'transaction_fee_percent': 0.001
         }
 
         # 동적 포지션 사이징
@@ -231,23 +233,15 @@ class TradingConfig:
             # },
             'buy_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 10, 'max': 30, 'step': 5},
-                    'ma_long_period': {'min': 60, 'max': 90, 'step': 10}
+                    'ma_short_period': {'min': 12, 'max': 24, 'step': 12},
+                    'ma_long_period': {'min': 48, 'max': 96, 'step': 24}
                 },
-                'BollingerBand': {
-                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-                }
             },
             'sell_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 10, 'max': 30, 'step': 5},
-                    'ma_long_period': {'min': 30, 'max': 40, 'step': 5}
+                    'ma_short_period': {'min': 12, 'max': 24, 'step': 12},
+                    'ma_long_period': {'min': 48, 'max': 96, 'step': 24}
                 },
-                'BollingerBand': {
-                    'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-                }
             },
 
             # 2. 매수/매도 신호 발생을 위한 가중치 합계 임계값 범위
@@ -278,7 +272,8 @@ class TradingConfig:
 
         # 데이터 캐시 설정
         self.DATA_CACHE_DIR = "data_cache"
-
+        self.MARKET_DATA_CACHE_TIMEOUT = 60  # 추가: 60초
+        
         self._validate_config()
 
     def _load_optimized_params(self):

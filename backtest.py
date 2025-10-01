@@ -554,7 +554,11 @@ def main():
 
     config = TradingConfig()
     log_filename = 'logs/backtest_single.log' if args.single else 'logs/backtest_wfo.log'
-    setup_logging(config.LOG_LEVEL, log_filename)
+    # 멀티프로세싱 사용하는지 명확히 지정
+    use_multiprocessing = (
+        __name__ == "__main__" and "backtest" in sys.argv[0]
+    )
+    queue_listener = setup_logging(config.LOG_LEVEL, log_filename, use_multiprocessing=use_multiprocessing)
     
     logger.info("🚀 백테스트 시스템 시작")
     START_DATE = "2022-01-01"
@@ -598,7 +602,17 @@ def main():
             wfo.run()
     except Exception as e:
         logger.error(f"❌ 백테스트 중 오류 발생: {e}", exc_info=True)
+
+        # 멀티프로세싱 종료 직전
+        if queue_listener:
+            queue_listener.stop()
+
         return 1
+        
+    # 멀티프로세싱 종료 직전
+    if queue_listener:
+        queue_listener.stop()
+
     return 0
 
 if __name__ == "__main__":
@@ -607,4 +621,3 @@ if __name__ == "__main__":
     # Windows/macOS에서 multiprocessing 사용 시 필요
     mp.freeze_support()
     sys.exit(main())
-

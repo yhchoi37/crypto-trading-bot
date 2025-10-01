@@ -81,7 +81,8 @@ class MultiCoinPortfolioManager:
             return False
 
         trade_value = quantity * price
-        fee = trade_value * self.config.TRADING_CONFIG.get('transaction_fee_percent', 0.001)
+        # TODO: 테이커 메이커에 따른 설정 수정
+        fee = self.calculate_trading_fee(trade_value, 'MARKET')
         total_portfolio_value = self.get_portfolio_value({symbol: price})
 
         if action.upper() == 'BUY':
@@ -108,7 +109,8 @@ class MultiCoinPortfolioManager:
                 # 조정된 값으로 수량, 거래액, 수수료를 다시 계산
                 quantity = adjusted_trade_value / price
                 trade_value = adjusted_trade_value
-                fee = trade_value * self.config.TRADING_CONFIG.get('transaction_fee_percent', 0.001)
+                # TODO: 테이커 메이커에 따른 설정 수정
+                fee = self.calculate_trading_fee(trade_value, 'MARKET')
 
             # 2. 현금 잔고 확인
             if self.cash < trade_value + fee:
@@ -167,7 +169,9 @@ class MultiCoinPortfolioManager:
         )
         return True
 
-    def check_risk_management(self, prices: dict, current_time: datetime):
+    def check_risk_management(self, prices: dict, current_time: datetime = None):
+        if current_time is None:
+            current_time = datetime.now()
         """보유 포지션에 대한 손절/익절 조건 확인 및 실행"""
         rm_config = self.config.RISK_MANAGEMENT
         default_rm = rm_config.get('default', {'enabled': False})
