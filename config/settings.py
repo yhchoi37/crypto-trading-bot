@@ -5,8 +5,8 @@
 import os
 from dotenv import load_dotenv
 import logging
-import json # json 모듈 추가
-
+import json
+from .optimization import OptimizationSettings # optimization 설정 import
 load_dotenv()
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class TradingConfig:
             'cache_timeout': 300
         }
         
-        # 거래 전략 설정
+        # 거래 전략 설정 (손절/익절 등)
         self.TRADING_CONFIG = {
             'buy_threshold': 0.6,
             'sell_threshold': 0.6,
@@ -84,191 +84,79 @@ class TradingConfig:
             'taker_fee_percent': 0.001,    # 테이커 수수료
         }
 
-        # 동적 포지션 사이징
-        self.POSITION_SIZING = {
-            'method': 'fixed',  # 'fixed', 'kelly', 'atr_based'
-            'fixed_percent': 0.15,
-            'kelly_fraction': 0.5,  # Kelly의 절반만 사용 (보수적)
-            'atr_multiplier': 2.0,
-            'max_position_percent': 0.25,  # 절대 최대값
-        }
-
-        # 거래 시간 제한: 암호화폐는 24/7 거래되지만, 특정 시간대(예: 미국 장 마감 후)에만 거래하는 옵션
-        self.TRADING_HOUR = {
-            'enabled': False,
-            'timezone': 'Asia/Seoul',
-            'allowed_hours': [(9, 18)],  # 9시-18시만 거래
-            'excluded_days': ['Saturday', 'Sunday']
-        }
-
-        # 최대 드로다운 알림: 특정 임계값 초과 시 자동으로 거래를 중단하거나 알림을 보내는 기능
-        self.DRAWDOWN_CONFIG = {
-            'max_drawdown_percent': 0.20,  # 20% 낙폭 시 거래 중단
-            'warning_threshold': 0.15,     # 15% 낙폭 시 경고 알림
-            'recovery_mode': True,         # 회복 모드에서는 거래량 50% 감소
-        }
-
-        # 코인별 변동성 임계값: 변동성이 너무 높을 때 거래를 중단
-
-        self.VOLATILITY_FILTER = {
-            'default': {
-                'enabled': True,
-                'atr_threshold': 5.0,  # ATR이 5% 초과 시 거래 제한
-                'lookback_period': 24  # 24시간 기준
-            },
-            'BTC': {
-                'enabled': False,
-            },
-        }
-
         # 리스크 관리 설정 (코인별 손절/익절 및 쿨다운)
         self.RISK_MANAGEMENT = {
             'default': {
                 'enabled': True,
                 'stop_loss_percent': 0.05,   # 5% 손실 시 손절
                 'take_profit_percent': 0.10, # 10% 이익 시 익절
-                'cooldown_period': 4,        # 거래 후 4시간 동안 추가 거래 방지
                 'daily_loss_limit': 0.03,    # 일일 3% 손실 시 거래 중단
                 'weekly_loss_limit': 0.10,   # 주간 10% 손실 시 거래 중단
                 'consecutive_loss_limit': 3,  # 연속 3회 손실 시 일시 중지
             },
             'BTC': {
+                'enabled': True,
                 'stop_loss_percent': 0.07,  # BTC는 손절 라인을 7%로 다르게 설정
-                'cooldown_period': 2  # BTC는 쿨다운을 2시간으로 짧게 설정
             },
             'ETH': {
                 'enabled': False  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
             }
         }
 
+        # 거래 쿨다운 설정 (기존 RISK_MANAGEMENT의 cooldown_period를 여기로 이동)
+        self.COOLDOWN_CONFIG = {
+            'default': {
+                'enabled': True,
+                'period': 4  # 4시간 (기존 cooldown_period는 시간 단위였음)
+            },
+            'BTC': {
+                'enabled': True,
+                'period': 2  # 2시간
+            },
+            'ETH': {
+                'enabled': False
+            }
+        }
+
+        # 시간 단위 설정
+        # pyupbit : month, week, day, minute240, minute60,30,15,10,5,3,1
+        self.INTERVAL = 'minute60' 
+
+        # 기술적 분석 설정 (실시간/모의 거래 시 기본값)
+        self.TECHNICAL_ANALYSIS_CONFIG = {
+            'buy_indicators': {
+                'MA_Cross': {'ma_short_period': 5, 'ma_long_period': 20},
+                'RSI': {'rsi_period': 14, 'rsi_oversold_threshold': 30},
+                'BollingerBand': {'bollinger_window': 20, 'bollinger_std_dev': 2}
+            },
+            'sell_indicators': {
+                'MA_Cross': {'ma_short_period': 10, 'ma_long_period': 40},
+                'RSI': {'rsi_period': 14, 'rsi_overbought_threshold': 70},
+                'BollingerBand': {'bollinger_window': 20, 'bollinger_std_dev': 2}
+            },
+            'signal_weights': {
+                'MA_Cross_buy': 1,
+                'RSI_buy': 1,
+                'BollingerBand_buy': 2,
+                'MA_Cross_sell': 1,
+                'RSI_sell': 1,
+                'BollingerBand_sell': 2,
+            },
+            'buy_trigger_threshold': 2,
+            'sell_trigger_threshold': 2
+        }
+
         # 백테스트 vs 실거래 설정 분리
         if self.IS_BACKTEST_MODE:
+            self.optimization = OptimizationSettings()
             self.BACKTEST_SPECIFIC = {
                 'commission_model': 'percentage',
                 'slippage_model': 'fixed',
                 'use_bid_ask_spread': True
             }
-
-        # 백테스팅 시간 단위 설정
-        self.BACKTEST_INTERVAL = 'minute60' # 'day', 'minute240', 'minute60' 등 pyupbit에서 지원하는 interval
-
-        # 기술적 분석 설정
-        self.TECHNICAL_ANALYSIS_CONFIG = {
-            'buy_indicators': {
-                'MA_Cross': {
-                    'ma_short_period': 5,
-                    'ma_long_period': 20
-                },
-                'RSI': {
-                    'rsi_period': 14,
-                    'rsi_oversold_threshold': 30
-                },
-                'BollingerBand': {
-                    'bollinger_window': 20,
-                    'bollinger_std_dev': 2
-                }
-            },
-            'sell_indicators': {
-                'MA_Cross': {
-                    'ma_short_period': 10,
-                    'ma_long_period': 40
-                },
-                'RSI': {
-                    'rsi_period': 14,
-                    'rsi_overbought_threshold': 70
-                },
-                'BollingerBand': {
-                    'bollinger_window': 20,
-                    'bollinger_std_dev': 2
-                }
-            },
-
-            # 가중치 구조를 하나로 통합
-            'signal_weights': {
-                'MA_Cross_buy': 1,
-                'RSI_buy': 1,
-                'BollingerBand_buy': 2,
-                'MA_Cross_sell': 1,
-                'RSI_sell': 1,
-                'BollingerBand_sell': 2,
-            },
-
-            'buy_trigger_threshold': 2,
-            'sell_trigger_threshold': 2 # 기본값을 2로 수정
-        }
-
+            
         # 최적화된 파라미터 로드 시도
         self._load_optimized_params()
-
-        # 백테스팅 파라미터 최적화 설정 (Grid Search)
-        self.OPTIMIZATION_CONFIG = {
-            # 1. 매수/매도에 사용할 기술 지표와 파라미터 범위 정의
-            # 'buy_indicators': {
-            #     'MA_Cross': {
-            #         'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-            #         'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
-            #     },
-            #     'RSI': {
-            #         'rsi_period': {'min': 14, 'max': 28, 'step': 7},
-            #         'rsi_oversold_threshold': {'min': 25, 'max': 35, 'step': 5}
-            #     },
-            #     'BollingerBand': {
-            #         'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-            #         'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-            #     }
-            # },
-            # 'sell_indicators': {
-            #     'MA_Cross': {
-            #         'ma_short_period': {'min': 5, 'max': 15, 'step': 5},
-            #         'ma_long_period': {'min': 20, 'max': 40, 'step': 10}
-            #     },
-            #     'RSI': {
-            #         'rsi_period': {'min': 14, 'max': 28, 'step': 7},
-            #         'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
-            #     },
-            #     'BollingerBand': {
-            #         'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-            #         'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-            #     }
-            # },
-            'buy_indicators': {
-                'MA_Cross': {
-                    'ma_short_period': {'min': 12, 'max': 24, 'step': 12},
-                    'ma_long_period': {'min': 48, 'max': 96, 'step': 24}
-                },
-            },
-            'sell_indicators': {
-                'MA_Cross': {
-                    'ma_short_period': {'min': 12, 'max': 24, 'step': 12},
-                    'ma_long_period': {'min': 48, 'max': 96, 'step': 24}
-                },
-            },
-
-            # 2. 매수/매도 신호 발생을 위한 가중치 합계 임계값 범위
-            'buy_trigger_threshold': {'min': 1, 'max': 3, 'step': 1},
-            'sell_trigger_threshold': {'min': 1, 'max': 3, 'step': 1},
-
-            # 3. 각 신호별 가중치 (고정값, 이름 통일)
-            'signal_weights': {
-                'MA_Cross_buy': 1,
-                'RSI_buy': 1,
-                'BollingerBand_buy': 2,
-                'MA_Cross_sell': 1,
-                'RSI_sell': 1,
-                'BollingerBand_sell': 2,
-            }
-        }
-
-        # 전진 분석 (Walk-Forward Optimization) 설정
-        self.WALK_FORWARD_CONFIG = {
-            'enabled': True,  # 전진 분석 활성화 여부
-            'training_period_months': 12, # 훈련 기간 (과거 12개월 데이터로 최적화)
-            'testing_period_months': 3    # 검증 기간 (이후 3개월 데이터로 성과 검증)
-        }
-        # 성능 최적화 설정
-        self.PERFORMANCE_CONFIG = {
-            'parallel_cores': -1,  # 사용할 CPU 코어 수. -1이면 가능한 모든 코어 사용
-        }
 
         # 데이터 캐시 설정
         self.DATA_CACHE_DIR = "data_cache"

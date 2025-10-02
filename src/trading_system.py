@@ -19,6 +19,27 @@ class TechnicalAnalysisAlgorithm:
     def __init__(self):
         pass
 
+# 클래스 시작 부분에 헬퍼 메서드 추가:
+def _find_indicator_column(self, df: pd.DataFrame, indicator: str, *params) -> str:
+    """동적으로 지표 컬럼명 찾기"""
+    if indicator == 'SMA':
+        period = params[0]
+        candidates = [f'SMA_{period}', f'sma_{period}', f'SMA{period}']
+    elif indicator == 'RSI':
+        period = params[0]
+        candidates = [f'RSI_{period}', f'rsi_{period}', f'RSI{period}']
+    elif indicator == 'BBL':
+        window, std = params
+        candidates = [f'BBL_{window}_{std}.0', f'BBL_{window}_{int(std)}', f'bbl_{window}_{std}']
+    elif indicator == 'BBU':
+        window, std = params
+        candidates = [f'BBU_{window}_{std}.0', f'BBU_{window}_{int(std)}', f'bbu_{window}_{std}']
+    
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
     def generate_signal(self, historical_data: pd.DataFrame, indicator_combo: tuple, buy_params: dict, sell_params: dict, weights: dict) -> dict:
         """주어진 지표 조합과 파라미터로 신호를 생성합니다."""
         required_period = max(
@@ -40,8 +61,9 @@ class TechnicalAnalysisAlgorithm:
             ma_params = buy_params['MA_Cross']
             ma_s_period, ma_l_period = ma_params.get("ma_short_period"), ma_params.get("ma_long_period")
             if ma_s_period and ma_l_period:
-                ma_s_col, ma_l_col = f'SMA_{ma_s_period}', f'SMA_{ma_l_period}'
-            if ma_s_col in df.columns and ma_l_col in df.columns:
+                ma_s_col = self._find_indicator_column(df, 'SMA', ma_s_period)
+                ma_l_col = self._find_indicator_column(df, 'SMA', ma_l_period)
+                if ma_s_col and ma_l_col:
                     log_msg_details.append(f"Buy MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.2f} vs {latest[ma_l_col]:.2f}")
                     if latest[ma_s_col] > latest[ma_l_col] and previous[ma_s_col] <= previous[ma_l_col]:
                         buy_score += weights.get('MA_Cross_buy', 1)
@@ -50,8 +72,8 @@ class TechnicalAnalysisAlgorithm:
             rsi_params = buy_params['RSI']
             rsi_period, rsi_threshold = rsi_params.get("rsi_period"), rsi_params.get('rsi_oversold_threshold')
             if rsi_period and rsi_threshold:
-                rsi_col = f'RSI_{rsi_period}'
-                if rsi_col in df.columns:
+                rsi_col = self._find_indicator_column(df, 'RSI', rsi_period)
+                if rsi_col:
                     log_msg_details.append(f"Buy RSI({rsi_period}): {latest[rsi_col]:.2f} < {rsi_threshold}?")
                     if latest[rsi_col] < rsi_threshold:
                         buy_score += weights.get('RSI_buy', 1)
@@ -60,8 +82,9 @@ class TechnicalAnalysisAlgorithm:
             bb_params = buy_params['BollingerBand']
             bb_window, bb_std = bb_params.get("bollinger_window"), bb_params.get("bollinger_std_dev")
             if bb_window and bb_std:
-                bbl_col = f'BBL_{bb_window}_{bb_std}.0' 
-                if bbl_col in df.columns:
+                # bbl_col = f'BBL_{bb_window}_{bb_std}.0' 
+                bbl_col = self._find_indicator_column(df, 'BBL', bb_window, bb_std)
+                if bbl_col:
                     log_msg_details.append(f"Buy BB({bb_window},{bb_std}): {latest['close']:.2f} < {latest[bbl_col]:.2f}?")
                     if latest['close'] < latest[bbl_col]:
                         buy_score += weights.get('BollingerBand_buy', 1)
@@ -71,8 +94,9 @@ class TechnicalAnalysisAlgorithm:
             ma_params = sell_params['MA_Cross']
             ma_s_period, ma_l_period = ma_params.get("ma_short_period"), ma_params.get("ma_long_period")
             if ma_s_period and ma_l_period:
-                ma_s_col, ma_l_col = f'SMA_{ma_s_period}', f'SMA_{ma_l_period}'
-                if ma_s_col in df.columns and ma_l_col in df.columns:
+                ma_s_col = self._find_indicator_column(df, 'SMA', ma_s_period)
+                ma_l_col = self._find_indicator_column(df, 'SMA', ma_l_period)
+                if ma_s_col and ma_l_col:
                     log_msg_details.append(f"Sell MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.2f} vs {latest[ma_l_col]:.2f}")
                     if latest[ma_s_col] < latest[ma_l_col] and previous[ma_s_col] >= previous[ma_l_col]:
                         sell_score += weights.get('MA_Cross_sell', 1)
@@ -81,8 +105,8 @@ class TechnicalAnalysisAlgorithm:
             rsi_params = sell_params['RSI']
             rsi_period, rsi_threshold = rsi_params.get("rsi_period"), rsi_params.get('rsi_overbought_threshold')
             if rsi_period and rsi_threshold:
-                rsi_col = f'RSI_{rsi_period}'
-                if rsi_col in df.columns:
+                rsi_col = self._find_indicator_column(df, 'RSI', rsi_period)
+                if rsi_col:
                     log_msg_details.append(f"Sell RSI({rsi_period}): {latest[rsi_col]:.2f} > {rsi_threshold}?")
                     if latest[rsi_col] > rsi_threshold:
                         sell_score += weights.get('RSI_sell', 1)
@@ -90,9 +114,10 @@ class TechnicalAnalysisAlgorithm:
         if 'BollingerBand' in indicator_combo and 'BollingerBand' in sell_params:
             bb_params = sell_params['BollingerBand']
             bb_window, bb_std = bb_params.get("bollinger_window"), bb_params.get("bollinger_std_dev")
-            if bb_window and bb_std:
-                bbu_col = f'BBU_{bb_window}_{bb_std}.0'
-                if bbu_col in df.columns:
+            if bb_window and bb_std: 
+                # bbu_col = f'BBU_{bb_window}_{bb_std}.0'
+                bbu_col = self._find_indicator_column(df, 'BBU', bb_window, bb_std)
+                if bbu_col:
                     log_msg_details.append(f"Sell BB({bb_window},{bb_std}): {latest['close']:.2f} > {latest[bbu_col]:.2f}?")
                     if latest['close'] > latest[bbu_col]:
                         sell_score += weights.get('BollingerBand_sell', 1)

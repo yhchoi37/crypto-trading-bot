@@ -55,13 +55,13 @@ class MultiCoinPortfolioManager:
             return False # 거래 기록 없음
 
         # TODO:데이터 최소 시간에 맞춰 수정 필요
-        cooldown_minutes = coin_cd.get('minutes', 60)
+        cooldown_period = coin_cd.get('period', 4)
         time_since_last_trade = current_time - last_trade_time
 
-        if time_since_last_trade < timedelta(minutes=cooldown_minutes):
+        if time_since_last_trade < timedelta(hours=cooldown_period):
             logger.debug(f"[{symbol} 쿨다운 활성화 중. "
-                        f"마지막 거래 후 {time_since_last_trade.total_seconds() / 60:.1f}분 경과 "
-                        f"(필요: {cooldown_minutes}분)")
+                        f"마지막 거래 후 {time_since_last_trade.total_seconds() / 3600:.0f}시간 경과 "
+                        f"(필요: {cooldown_period}시간)")
             return True
         return False
 

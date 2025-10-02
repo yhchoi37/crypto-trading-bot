@@ -238,7 +238,8 @@ class Optimizer:
     def _generate_jobs(self):
         """최적화를 위한 유효하고 논리적인 테스트 '잡(Job)' 생성"""
         jobs = []
-        cfg = self.config.OPTIMIZATION_CONFIG
+        # optimization 설정 객체에서 OPTIMIZATION_CONFIG를 가져옴
+        cfg = self.config.optimization.OPTIMIZATION_CONFIG
 
         # 1. 사용할 지표의 모든 조합 생성 (A, B, C, AB, AC, BC, ABC)
         buy_indicator_names = list(cfg['buy_indicators'].keys())
@@ -325,7 +326,8 @@ class Optimizer:
             logger.warning("생성된 최적화 작업이 없습니다.")
             return None
 
-        core_count = self.config.PERFORMANCE_CONFIG['parallel_cores']
+        # optimization 설정 객체에서 PERFORMANCE_CONFIG를 가져옴
+        core_count = self.config.optimization.PERFORMANCE_CONFIG['parallel_cores']
         if core_count == -1:
             core_count = mp.cpu_count()
         logger.info(f"훈련 구간 내에서 {len(jobs)}개 전략 조합으로 최적화를 시작합니다. (병렬 코어: {core_count}개)")
@@ -374,7 +376,8 @@ class WalkForwardOptimizer:
             'rsi_period': set(), 'rsi_oversold_threshold': set(),
             'bollinger_window': set(), 'bollinger_std_dev': set()
         }
-        cfg = self.config.OPTIMIZATION_CONFIG
+        # optimization 설정 객체에서 OPTIMIZATION_CONFIG를 가져옴
+        cfg = self.config.optimization.OPTIMIZATION_CONFIG
 
         # 매수/매도 지표 파라미터 수집
         for indicator_type in ['buy_indicators', 'sell_indicators']:
@@ -414,7 +417,11 @@ class WalkForwardOptimizer:
         return pd.concat(data_with_indicators) if data_with_indicators else pd.DataFrame()
 
     def run(self):
-        wfc = self.config.WALK_FORWARD_CONFIG
+        # optimization 설정 객체에서 WALK_FORWARD_CONFIG를 가져옴
+        wfc = self.config.optimization.WALK_FORWARD_CONFIG
+        if not wfc['enabled']:
+            logger.warning("전진 분석이 비활성화되어 있습니다.")
+            return
         coins = [c for c in self.config.TARGET_ALLOCATION if c != 'CASH']
         
         # 데이터 로드 및 인덱스 설정
@@ -621,3 +628,4 @@ if __name__ == "__main__":
     # Windows/macOS에서 multiprocessing 사용 시 필요
     mp.freeze_support()
     sys.exit(main())
+

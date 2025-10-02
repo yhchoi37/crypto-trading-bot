@@ -71,17 +71,21 @@ class MultiCoinDataManager:
 
         return prices
 
-    def generate_multi_coin_data(self, coins, days=7):
+    def generate_multi_coin_data(self, coins, min_period=7):
         """여러 코인에 대한 과거 캔들 데이터 통합 DataFrame 생성 (캐싱 적용)"""
-        cache_key = f"ohlcv_{'_'.join(sorted(coins))}_{days}d"
+        interval = self.config.INTERVAL
+        interval_
+        cache_key = f"ohlcv_{'_'.join(sorted(coins))}_{min_period}d"
         if self._is_cache_valid(cache_key):
             logger.debug(f"{cache_key} 캐시 사용")
             return self._cache[cache_key]
         all_data = []
         for symbol in coins:
             try:
-                # pyupbit은 최대 200일치 데이터를 가져오므로, days가 200을 넘지 않도록 조정
-                df = pyupbit.get_ohlcv(f"KRW-{symbol}", interval="day", count=min(days, 200))
+                # pyupbit은 최대 200개 데이터를 개져오므로, count가 200을 넘지 않도록 조정
+                df = pyupbit.get_ohlcv(
+                    f"KRW-{symbol}", interval=interval, count=min(min_period, 200)
+                )
                 if df is not None:
                     df = df.reset_index()
                 df['coin'] = symbol
@@ -104,7 +108,7 @@ class MultiCoinDataManager:
         설정된 interval(시간봉/일봉 등)에 따라 데이터를 수집합니다.
         """
         cache_dir = self.config.DATA_CACHE_DIR
-        interval = self.config.BACKTEST_INTERVAL
+        interval = self.config.INTERVAL
         os.makedirs(cache_dir, exist_ok=True)
 
         all_data = []
@@ -127,11 +131,11 @@ class MultiCoinDataManager:
 
                 while True:
                     df_chunk = pyupbit.get_ohlcv(
-                    f"KRW-{symbol}",
+                        f"KRW-{symbol}",
                         interval=interval,
                         to=to_time,
                         count=200
-                )
+                    )
                     if df_chunk is None or df_chunk.empty:
                         break
 
