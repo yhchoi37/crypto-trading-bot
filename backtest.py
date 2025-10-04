@@ -3,16 +3,12 @@
 기술적 분석 전략 최적화 실행 스크립트 (Walk-Forward Optimization)
 """
 import os
-# TradingConfig가 import 되기 전에 환경 변수를 설정해야 합니다.
-os.environ['IS_BACKTEST_MODE'] = 'true'
-
 import sys
 import logging
 import itertools
 from datetime import datetime
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 from dateutil.relativedelta import relativedelta
 import multiprocessing as mp
@@ -22,26 +18,12 @@ import argparse
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
 from config.settings import TradingConfig
+form src.util import convert_numpy_types, report_final_backtest_results
 from src.trading_system import MultiCoinTradingSystem
 from src.data_manager import MultiCoinDataManager
 from src.logging_config import setup_logging # 공통 로깅 함수 임포트
 
 logger = logging.getLogger(__name__)
-
-
-def convert_numpy_types(obj):
-    """Numpy 타입을 JSON 직렬화 가능한 파이썬 기본 타입으로 변환"""
-    if isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {k: convert_numpy_types(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [convert_numpy_types(i) for i in obj]
-    return obj
 
 # multiprocessing을 위한 최상위 레벨 함수
 def run_backtest_job(job_args: tuple) -> dict:
@@ -60,66 +42,6 @@ def run_backtest_job(job_args: tuple) -> dict:
         del result['trade_history']
         
     return {**job_config, **result}
-
-def report_final_results(start_date, end_date, initial_balance, result: dict, prefix: str = ""):
-    """백테스트 최종 결과를 리포팅하고 파일로 저장하는 범용 함수"""
-    if not result or 'portfolio_history' not in result or result['portfolio_history'].empty:
-        logger.error("백테스트 결과가 없어 리포트를 생성할 수 없습니다.")
-        return
-
-    summary = result['summary']
-    portfolio_history_df = result['portfolio_history']
-    trade_history_df = result.get('trade_history', pd.DataFrame())
-
-    logger.info(f"\n{'='*80}\n ** {prefix} 최종 백테스트 결과 **\n{'='*80}")
-    logger.info(f"전체 기간: {start_date.date()} ~ {end_date.date()}")
-    logger.info(f"초기 자본: ${initial_balance:,.2f} | 최종 자산: ${summary['final_value']:,.2f}")
-    logger.info(f"총 수익률: {summary['total_return']:.2f}% | 최대 낙폭 (MDD): {summary['mdd']:.2f}%")
-    logger.info("="*80)
-
-    # --- 파일 저장 로직 ---
-    now_str = datetime.now().strftime("%y%m%d_%H%M%S")
-    prefix_str = f"{prefix}_" if prefix else ""
-    
-    output_dir = 'output'
-    os.makedirs(output_dir, exist_ok=True)
-
-    portfolio_filename = os.path.join(output_dir, f'{prefix_str}portfolio_history_{now_str}.csv')
-    trade_filename = os.path.join(output_dir, f'{prefix_str}trade_history_{now_str}.csv')
-    plot_filename = os.path.join(output_dir, f'{prefix_str}performance_{now_str}.png')
-
-    portfolio_history_df.to_csv(portfolio_filename)
-    logger.info(f"📈 포트폴리오 상세 내역 저장 완료: {portfolio_filename}")
-    if not trade_history_df.empty:
-        trade_history_df.to_csv(trade_filename, index=False)
-        logger.info(f"TRADE_LOG 거래 상세 내역 저장 완료: {trade_filename}")
-
-    plot_results(portfolio_history_df, plot_filename)
-
-def plot_results(history_df, filename):
-    """백테스트 결과를 그래프로 저장하는 범용 함수"""
-    if history_df is None or history_df.empty: return
-    history_df['peak'] = history_df['portfolio_value'].cummax()
-    peak = history_df['peak']
-    portfolio_value = history_df['portfolio_value']
-    history_df['drawdown'] = (portfolio_value - peak) / peak.replace(0, np.nan)
-
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
-    fig.suptitle('Backtest Performance', fontsize=16)
-
-    ax1.plot(history_df.index, history_df['portfolio_value'], label='Portfolio Value', color='blue')
-    ax1.set_ylabel('Portfolio Value ($)'); ax1.set_title('Portfolio Value Over Time'); ax1.grid(True)
-    ax2.fill_between(history_df.index, history_df['drawdown'] * 100, 0, color='red', alpha=0.3)
-    ax2.set_ylabel('Drawdown (%)'); ax2.set_title('Drawdown Over Time'); ax2.grid(True)
-
-    plt.xlabel('Date'); plt.tight_layout(rect=[0, 0, 1, 0.96])
-    try:
-        plt.savefig(filename, dpi=300)
-        logger.info(f"🎨 성과 그래프 저장 완료: {filename}")
-    except Exception as e:
-        logger.error(f"그래프 저장 중 오류 발생: {e}")
-    finally:
-        plt.close(fig)
 
 class BacktestRunner:
     """단일 전략 조합으로 백테스팅을 수행하고 결과를 반환하는 클래스"""
@@ -484,7 +406,9 @@ class WalkForwardOptimizer:
             'portfolio_history': final_portfolio_history,
             'trade_history': final_trade_history
         }
-        report_final_results(self.start_date, self.end_date, self.initial_balance, final_result, prefix="WalkForward")
+        report_final_backtest_results(
+            self.start_date, self.end_date, self.initial_balance, final_result, prefix="WalkForward"
+        )
         self._save_strategy_to_file(latest_best_strategy)
 
     def _calculate_summary_stats(self, portfolio_df: pd.DataFrame, initial_balance: float) -> dict:
@@ -556,21 +480,39 @@ def precompute_indicators_for_single_run(data: pd.DataFrame, config: dict) -> pd
 
 def main():
     parser = argparse.ArgumentParser(description="백테스팅 및 최적화 실행 스크립트")
-    parser.add_argument('--single', action='store_true', help='전진 분석 없이 설정 파일의 기본값으로 단일 백테스트를 실행합니다.')
+    parser.add_argument(
+        '--mode', 
+        type=str, 
+        default='single',
+        choices=['single', 'grid', 'walk-forward'],
+        help='백테스트 모드 선택'
+    )
+    # 백테스트 초기 자본 설정 옵션 추가
+    parser.add_argument(
+        '--initial-balance',
+        type=float,
+        default=10_000_000,
+        help='백테스트 초기 자본 (기본값: 10,000,000원)'
+    )
     args = parser.parse_args()
 
-    config = TradingConfig()
+    # 백테스트 모드로 명시적 설정 (자동 감지되지만 명확성을 위해)
+    config = TradingConfig(force_mode='backtest')
+
     log_filename = 'logs/backtest_single.log' if args.single else 'logs/backtest_wfo.log'
     # 멀티프로세싱 사용하는지 명확히 지정
-    use_multiprocessing = (
-        __name__ == "__main__" and "backtest" in sys.argv[0]
-    )
-    queue_listener = setup_logging(config.LOG_LEVEL, log_filename, use_multiprocessing=use_multiprocessing)
+    use_mp = detect_multiprocessing_mode()
+    queue_listener = setup_logging(config.LOG_LEVEL, log_filename, use_multiprocessing=use_mp)
     
     logger.info("🚀 백테스트 시스템 시작")
     START_DATE = "2022-01-01"
-    END_DATE = "2025-06-30"
-    INITIAL_BALANCE = config.INITIAL_BALANCE
+    # END_DATE = "2025-06-30"
+    END_DATE = "2023-12-31"
+    # 명령줄 인자로 초기 자본 오버라이드
+    INITIAL_BALANCE = args.initial_balance
+    config.INITIAL_BALANCE = INITIAL_BALANCE  # config에도 반영
+    
+    logger.info(f"💰 백테스트 초기 자본: ₩{INITIAL_BALANCE:,}")
 
     try:
         if args.single:
@@ -609,16 +551,11 @@ def main():
             wfo.run()
     except Exception as e:
         logger.error(f"❌ 백테스트 중 오류 발생: {e}", exc_info=True)
-
-        # 멀티프로세싱 종료 직전
+        return 1
+    finally:
+        # QueueListener 정리
         if queue_listener:
             queue_listener.stop()
-
-        return 1
-        
-    # 멀티프로세싱 종료 직전
-    if queue_listener:
-        queue_listener.stop()
 
     return 0
 

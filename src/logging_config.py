@@ -8,6 +8,7 @@ import os
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 import multiprocessing
 from tqdm import tqdm
+from src.utils import detect_multiprocessing_mode, ensure_dir_exists
 
 class TqdmLoggingHandler(logging.StreamHandler):
     """tqdm 진행률 표시줄과 호환되는 로깅 핸들러"""
@@ -23,11 +24,14 @@ class TqdmLoggingHandler(logging.StreamHandler):
         except Exception:
             self.handleError(record)
 
-def setup_logging(level='INFO', log_to_file=None, use_multiprocessing=False):
+def setup_logging(level='INFO', log_to_file=None, use_multiprocessing=None):
     """
     중앙 로깅 설정 함수 (리팩토링 버전).
     코드 중복을 줄이고 가독성을 향상시키면서 기존 기능은 모두 보존합니다.
     """
+    if use_multiprocessing is None:
+        use_multiprocessing = detect_multiprocessing_mode()
+        
     log_level = getattr(logging, level.upper(), logging.INFO)
     log_format = logging.Formatter(
         '%(asctime)s - [%(process)d] - %(name)s - %(levelname)s - %(message)s'
@@ -43,9 +47,7 @@ def setup_logging(level='INFO', log_to_file=None, use_multiprocessing=False):
         
     # log_to_file 인자가 주어졌을 때만 파일 핸들러를 추가합니다.
     if log_to_file:
-        log_dir = os.path.dirname(log_to_file)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+        ensure_dir_exists(os.path.dirname(log_to_file))
 
         file_handler = TimedRotatingFileHandler(
             log_to_file, when='D', backupCount=30, encoding='utf-8'
@@ -54,6 +56,8 @@ def setup_logging(level='INFO', log_to_file=None, use_multiprocessing=False):
         handlers.append(file_handler)
 
     # 2. 루트 로거를 설정합니다. (기존 핸들러 제거 포함)
+    # logging.basicConfig는 한 번만 호출 가능하고 유연성이 떨어지므로
+    # 루트 로거를 직접 가져와 설정하는 방식을 유지합니다.
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
     root_logger.handlers.clear()
@@ -84,6 +88,12 @@ def setup_logging(level='INFO', log_to_file=None, use_multiprocessing=False):
     # 파일 로깅 정보는 모드에 관계없이 공통으로 출력합니다.
     if log_to_file:
         logging.info(f"로그 파일: '{log_to_file}'")
+
+    # Matplotlib의 상세 DEBUG 로그를 비활성화 (WARNING 레벨 이상만 출력)
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
+    # 불필요한 다른 라이브러리 로그 레벨 조정 (예시)
+    # logging.getLogger('urllib3').setLevel(logging.INFO)
 
     return listener
 

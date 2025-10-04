@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-다중 코인 + 소셜미디어 센티멘트 분석 자동거래 시스템
-Multi-Coin Social Media Sentiment Trading Bot
-
-Author: AI Trading System
-Version: 2.0.0
+메인 실행 스크립트 (실시간 거래)
 """
 import os
 import sys
 import time
-import schedule
+import logging
+import argparse
 from datetime import datetime
+import pyupbit
+
 from config.settings import TradingConfig
 from src.trading_system import MultiCoinTradingSystem
 from src.notifications import NotificationManager
-from src.logging_config import setup_logging # 공통 로깅 함수 임포트
-import logging
+from src.logging_config import setup_logging
+
+logger = logging.getLogger(__name__)
 
 # 최상단 로깅 설정 제거
 class TradingBot:
@@ -25,14 +25,11 @@ class TradingBot:
         self.is_running = False
         self.trading_system = None
         self.notification_manager = None
-        # self.logger를 main에서 설정된 로거를 사용하도록 변경
-        self.logger = logging.getLogger(__name__)
 
-    # setup_logging 메서드 전체 제거
     def initialize(self):
         """시스템 초기화"""
         try:
-            self.logger.info("🚀 트레이딩 시스템 초기화 중...")
+            logger.info("🚀 트레이딩 시스템 초기화 중...")
             # 디렉토리 생성
             os.makedirs('logs', exist_ok=True)
             os.makedirs('data_cache', exist_ok=True)
@@ -53,10 +50,10 @@ class TradingBot:
                 email_settings=self.config.EMAIL_SETTINGS
             )
             self.setup_schedule()
-            self.logger.info("✅ 시스템 초기화 완료")
+            logger.info("✅ 시스템 초기화 완료")
             return True
         except Exception as e:
-            self.logger.error(f"❌ 시스템 초기화 실패: {e}", exc_info=True)
+            logger.error(f"❌ 시스템 초기화 실패: {e}", exc_info=True)
             return False
 
     def setup_schedule(self):
@@ -69,35 +66,35 @@ class TradingBot:
         schedule.every().day.at("18:00").do(self.send_daily_report)
         # 매일 00:00 데이터 백업
         schedule.every().day.at("00:00").do(self.backup_data)
-        self.logger.info("📅 거래 스케줄 설정 완료")
+        logger.info("📅 거래 스케줄 설정 완료")
 
     def run_trading_cycle(self):
         """거래 사이클 실행"""
         try:
-            self.logger.info("🔄 거래 사이클 시작")
+            logger.info("🔄 거래 사이클 시작")
             result = self.trading_system.run_trading_cycle()
             if result['active_signals']:
                 message = f"🚨 거래 신호 알림\n활성 신호: {len(result['active_signals'])}개\n"
                 for signal in result['active_signals'][:3]:
                     message += f"{signal['coin']}: {signal['decision']['action']} (강도: {signal['decision']['strength']:.2f})\n"
                 self.notification_manager.send_alert(message, "TRADING_SIGNAL")
-            self.logger.info(f"✅ 거래 사이클 완료 - 포트폴리오 가치: ${result['portfolio_value']:,.2f}")
+            logger.info(f"✅ 거래 사이클 완료 - 포트폴리오 가치: ${result['portfolio_value']:,.2f}")
         except Exception as e:
-            self.logger.error(f"❌ 거래 사이클 실패: {e}", exc_info=True)
+            logger.error(f"❌ 거래 사이클 실패: {e}", exc_info=True)
         if self.notification_manager:
                 self.notification_manager.send_alert(f"거래 사이클 오류: {e}", "ERROR")
 
     def run_rebalancing(self):
         """포트폴리오 리밸런싱"""
         try:
-            self.logger.info("⚖️ 포트폴리오 리밸런싱 실행")
+            logger.info("⚖️ 포트폴리오 리밸런싱 실행")
             prices = self.trading_system.data_manager.get_coin_prices()
             self.trading_system.perform_rebalancing(prices)
             portfolio_value = self.trading_system.portfolio_manager.get_portfolio_value(prices)
             message = f"⚖️ 리밸런싱 완료\n포트폴리오 가치: ${portfolio_value:,.2f}"
             self.notification_manager.send_alert(message, "REBALANCING")
         except Exception as e:
-            self.logger.error(f"❌ 리밸런싱 실패: {e}", exc_info=True)
+            logger.error(f"❌ 리밸런싱 실패: {e}", exc_info=True)
 
     def send_daily_report(self):
         """일일 성과 리포트 전송"""
@@ -113,9 +110,9 @@ class TradingBot:
                       f"📈 오늘 거래 수: {metrics['trades_today']}\n"
                       f"🏷️ 보유 포지션 수: {metrics['total_positions']}")
             self.notification_manager.send_alert(report, "DAILY_REPORT")
-            self.logger.info("📧 일일 리포트 전송 완료")
+            logger.info("📧 일일 리포트 전송 완료")
         except Exception as e:
-            self.logger.error(f"❌ 일일 리포트 생성 실패: {e}", exc_info=True)
+            logger.error(f"❌ 일일 리포트 생성 실패: {e}", exc_info=True)
 
     def backup_data(self):
         """데이터 백업"""
@@ -123,9 +120,9 @@ class TradingBot:
             filename = self.trading_system.portfolio_manager.export_trade_history(
                 f"backups/trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             )
-            self.logger.info(f"💾 데이터 백업 완료: {filename}")
+            logger.info(f"💾 데이터 백업 완료: {filename}")
         except Exception as e:
-            self.logger.error(f"❌ 데이터 백업 실패: {e}", exc_info=True)
+            logger.error(f"❌ 데이터 백업 실패: {e}", exc_info=True)
 
     def start(self):
         """봇 시작"""
@@ -134,7 +131,7 @@ class TradingBot:
         self.is_running = True
         
         mode = "모의 거래" if self.config.SIMULATION_MODE else "실거래"
-        self.logger.info(f"🎯 트레이딩 봇 시작! ({mode} 모드)")
+        logger.info(f"🎯 트레이딩 봇 시작! ({mode} 모드)")
         
         self.notification_manager.send_alert(
             f"🚀 트레이딩 봇이 시작되었습니다! ({mode} 모드)\n"
@@ -148,9 +145,9 @@ class TradingBot:
                 schedule.run_pending()
                 time.sleep(1) # CPU 사용량을 줄이기 위해 짧은 sleep 추가
         except KeyboardInterrupt:
-            self.logger.info("⏹️ 사용자에 의해 중지되었습니다")
+            logger.info("⏹️ 사용자에 의해 중지되었습니다")
         except Exception as e:
-            self.logger.critical(f"❌ 시스템 심각한 오류: {e}", exc_info=True)
+            logger.critical(f"❌ 시스템 심각한 오류: {e}", exc_info=True)
             if self.notification_manager:
                 self.notification_manager.send_alert(f"시스템 오류로 봇이 중지되었습니다: {e}", "ERROR")
         finally:
@@ -162,21 +159,70 @@ class TradingBot:
             self.is_running = False
             if self.notification_manager:
                 self.notification_manager.send_alert("⏹️ 트레이딩 봇이 중지되었습니다", "BOT_STOP")
-            self.logger.info("🛑 트레이딩 봇이 중지되었습니다")
+            logger.info("🛑 트레이딩 봇이 중지되었습니다")
+            
+def get_real_balance(config: TradingConfig) -> float:
+    """거래소에서 실제 잔고 조회"""
+    if config.SIMULATION_MODE:
+        # 시뮬레이션 모드: 가상 초기 자본
+        initial_balance = 10_000_000
+        logger.info(f"💰 시뮬레이션 초기 자본: ₩{initial_balance:,}")
+        return initial_balance
+    else:
+        # 실거래 모드: API로 실제 잔고 조회
+        try:
+            upbit = pyupbit.Upbit(config.UPBIT_ACCESS_KEY, config.UPBIT_SECRET_KEY)
+            balances = upbit.get_balances()
+            
+            # KRW 잔고 확인
+            krw_balance = 0
+            for balance in balances:
+                if balance['currency'] == 'KRW':
+                    krw_balance = float(balance['balance'])
+                    break
+            
+            logger.info(f"💰 실거래 현재 KRW 잔고: ₩{krw_balance:,}")
+            
+            if krw_balance < 10000:
+                logger.warning("⚠️ 잔고가 10,000원 미만입니다!")
+            
+            return krw_balance
+            
+        except Exception as e:
+            logger.error(f"❌ 잔고 조회 실패: {e}")
+            raise
 
 def main():
+    parser = argparse.ArgumentParser(description="암호화폐 자동매매 시스템")
+    parser.add_argument('--mode', type=str, default=None,
+                       choices=['simulation', 'live'],
+                       help='실행 모드 (기본값: .env SIMULATION_MODE 사용)')
+    args = parser.parse_args()
+
     """메인 함수"""
     # 1. TradingConfig 인스턴스를 먼저 생성
-    config = TradingConfig()
+    # 설정 로드 (명령줄 인자로 오버라이드 가능)
+    config = TradingConfig(force_mode=args.mode)
 
     # 2. 공통 로깅 함수를 호출하여 로거를 설정
-    setup_logging(config.LOG_LEVEL, 'trading.log')
+    queue_listener = setup_logging(config.LOG_LEVEL, 'logs/trading.log', use_multiprocessing=False)
+  
+    logger.info("="*80)
+    logger.info("🚀 암호화폐 자동매매 시스템 시작")
+    logger.info(f"📅 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("="*80)
 
-    # 이제부터 로깅 사용 가능
-    logger = logging.getLogger(__name__)
-
-    print("🚀 다중 코인 + 소셜미디어 센티멘트 분석 트레이딩 봇")
-    print("=" * 60)
+    # 실거래 모드 경고
+    if not config.is_paper_trading():
+        logger.warning("⚠️ " * 20)
+        logger.warning("⚠️  실거래 모드로 실행 중입니다!")
+        logger.warning("⚠️  실제 자금이 투입됩니다!")
+        logger.warning("⚠️ " * 20)
+        
+        # 5초 대기 (실수 방지)
+        for i in range(5, 0, -1):
+            logger.warning(f"⏳ {i}초 후 시작... (Ctrl+C로 중단 가능)")
+            time.sleep(1)
 
     bot = TradingBot()
     try:

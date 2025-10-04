@@ -5,6 +5,7 @@
 import logging
 from datetime import datetime, timedelta
 from config.settings import TradingConfig
+from src.utils import validate_price_data, safe_divide, calculate_percentage_chang
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,8 @@ class MultiCoinPortfolioManager:
         """중앙화된 거래 실행 및 리스크 관리"""
         if quantity <= 0 or price <= 0:
             logger.warning(f"유효하지 않은 거래 시도: {symbol} 수량={quantity}, 가격={price}")
+            return False
+        if not validate_price_data(price, symbol):
             return False
 
         trade_value = quantity * price
@@ -198,7 +201,7 @@ class MultiCoinPortfolioManager:
             if not current_price or avg_buy_price <= 0:
                 continue
             # 수익률 계산
-            pnl_percent = (current_price - avg_buy_price) / avg_buy_price
+            pnl_percent = calculate_percentage_change(avg_buy_price, current_price)
 
             # 손절 조건 확인 (None이 아니고, 조건 충족 시)
             if stop_loss_pct is not None and pnl_percent <= -stop_loss_pct:

@@ -13,5 +13,5 @@ __all__ = [
     'RedditSentimentCollector',
     'MultiCoinDataManager',
     'MultiCoinPortfolioManager',
-    'NotificationManager'
+    'NotificationManager',
 ]

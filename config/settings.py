@@ -12,25 +12,37 @@ logger = logging.getLogger(__name__)
 
 class TradingConfig:
     """트레이딩 시스템 설정 클래스"""
-    def __init__(self):
+    def __init__(self, force_mode: str = None):
+        """
+        Args:
+            force_mode: 강제 모드 설정 ('backtest', 'simulation', 'live', None)
+                       None이면 자동 감지
+        """
         # 설정 버전 관리
-        self.CONFIG_VERSION = '0.1.0'
-        self.MIN_COMPATIBLE_VERSION = '0.1.0'
+        self.CONFIG_VERSION = '0.2.0'
+        self.MIN_COMPATIBLE_VERSION = '0.2.0'
+        
+        # ========== 실행 모드 자동 감지 ==========
+        self._detect_execution_mode(force_mode)
 
         # 로그 레벨 (DEBUG, INFO, WARNING, ERROR)
         self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
         
         # 데이터 수집 간격 (초)
         self.DATA_COLLECTION_INTERVAL = int(os.getenv('DATA_COLLECTION_INTERVAL', 300))
-        
-        # 백테스트 실행 여부 (backtest.py에서 설정)
-        self.IS_BACKTEST_MODE = os.getenv('IS_BACKTEST_MODE', 'false').lower() == 'true'
 
         # 모의 거래 모드 (main.py에서 사용)
         self.SIMULATION_MODE = os.getenv('SIMULATION_MODE', 'true').lower() == 'true'
 
         # 기본 설정
-        self.INITIAL_BALANCE = float(os.getenv('INITIAL_BALANCE', 10000000))
+        if self.IS_BACKTEST_MODE:
+            # 백테스트는 초기 자본을 직접 설정
+            self.INITIAL_BALANCE = 10_000_000  # 1천만원 (기본값)
+            logger.info(f"💰 백테스트 초기 자본: ₩{self.INITIAL_BALANCE:,}")
+        else:
+            # 실거래/시뮬레이션은 API로 잔고 조회 (INITIAL_BALANCE 불필요)
+            self.INITIAL_BALANCE = None
+            logger.info("💰 실거래 모드: API로 실제 잔고 조회 예정")
         self.MAX_POSITION_SIZE = float(os.getenv('MAX_POSITION_SIZE', 0.15))
         self.REBALANCING_THRESHOLD = float(os.getenv('REBALANCING_THRESHOLD', 0.05))
 
@@ -63,7 +75,7 @@ class TradingConfig:
         #     'SOL': 0.19, 'CASH': 0.01
         # }
         self.TARGET_ALLOCATION = {
-            'BTC': 0.50, 'ETH': 0.49, 'CASH': 0.01
+            'BTC': 0.40, 'ETH': 0.50, 'CASH': 0.10
         }
 
         # 센티멘트 분석 설정
@@ -163,6 +175,7 @@ class TradingConfig:
         self.MARKET_DATA_CACHE_TIMEOUT = 60  # 추가: 60초
         
         self._validate_config()
+        self._log_execution_mode()
 
     def _load_optimized_params(self):
         """'optimized_params.json' 파일이 있으면 로드하여 기술적 분석 설정을 덮어씁니다."""
@@ -180,8 +193,68 @@ class TradingConfig:
         else:
             logger.info("최적화된 파라미터 파일이 없습니다. 기본 설정을 사용합니다.")
 
+    def _detect_execution_mode(self, force_mode: str = None):
+        """실행 모드 자동 감지 및 설정"""
+        if force_mode:
+            # 명시적으로 지정된 경우
+            mode = force_mode.lower()
+            if mode == 'backtest':
+                self.IS_BACKTEST_MODE = True
+                self.SIMULATION_MODE = True  # 백테스트는 항상 시뮬레이션
+            elif mode == 'simulation':
+                self.IS_BACKTEST_MODE = False
+                self.SIMULATION_MODE = True
+            elif mode == 'live':
+                self.IS_BACKTEST_MODE = False
+                self.SIMULATION_MODE = False
+            else:
+                raise ValueError(f"알 수 없는 모드: {force_mode}")
+        else:
+            # 자동 감지
+            script_name = os.path.basename(sys.argv[0])
+            
+            if script_name.startswith('backtest'):
+                # backtest.py 실행 → 백테스트 모드
+                self.IS_BACKTEST_MODE = True
+                self.SIMULATION_MODE = True
+                logger.info("🔍 백테스트 모드 자동 감지")
+            else:
+                # main.py 또는 기타 → 실시간 모드
+                self.IS_BACKTEST_MODE = False
+                # .env에서 SIMULATION_MODE 읽기
+                self.SIMULATION_MODE = os.getenv('SIMULATION_MODE', 'true').lower() == 'true'
+                logger.info("🔍 실시간 모드 자동 감지")
+    
+    def _log_execution_mode(self):
+        """현재 실행 모드 로깅"""
+        mode_str = self._get_mode_description()
+        logger.info(f"{'='*60}")
+        logger.info(f"🎯 실행 모드: {mode_str}")
+        logger.info(f"{'='*60}")
+    
+    def _get_mode_description(self) -> str:
+        """현재 모드 설명 반환"""
+        if self.IS_BACKTEST_MODE:
+            return "백테스트 모드 (과거 데이터 분석)"
+        elif self.SIMULATION_MODE:
+            return "시뮬레이션 모드 (실시간 데이터, 모의 거래)"
+        else:
+            return "⚠️  실거래 모드 (실제 주문 발생) ⚠️"
+    
+    def is_paper_trading(self) -> bool:
+        """모의 거래 여부 (백테스트 또는 시뮬레이션)"""
+        return self.IS_BACKTEST_MODE or self.SIMULATION_MODE
+
     def _validate_config(self):
         """설정 값의 유효성을 검사합니다."""
+        # 실거래 모드인데 API 키가 없으면 오류
+        if not self.is_paper_trading():
+            if not self.UPBIT_ACCESS_KEY or not self.UPBIT_SECRET_KEY:
+                raise ValueError(
+                    "⚠️ 실거래 모드인데 Upbit API 키가 설정되지 않았습니다! "
+                    ".env 파일을 확인하거나 SIMULATION_MODE=true로 변경하세요."
+                )
+
         # 1. 포트폴리오 목표 배분 합계 검증
         total_allocation = sum(self.TARGET_ALLOCATION.values())
         if not (0.999 < total_allocation < 1.001): # 부동소수점 오차 감안

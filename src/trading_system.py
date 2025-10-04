@@ -19,26 +19,26 @@ class TechnicalAnalysisAlgorithm:
     def __init__(self):
         pass
 
-# 클래스 시작 부분에 헬퍼 메서드 추가:
-def _find_indicator_column(self, df: pd.DataFrame, indicator: str, *params) -> str:
-    """동적으로 지표 컬럼명 찾기"""
-    if indicator == 'SMA':
-        period = params[0]
-        candidates = [f'SMA_{period}', f'sma_{period}', f'SMA{period}']
-    elif indicator == 'RSI':
-        period = params[0]
-        candidates = [f'RSI_{period}', f'rsi_{period}', f'RSI{period}']
-    elif indicator == 'BBL':
-        window, std = params
-        candidates = [f'BBL_{window}_{std}.0', f'BBL_{window}_{int(std)}', f'bbl_{window}_{std}']
-    elif indicator == 'BBU':
-        window, std = params
-        candidates = [f'BBU_{window}_{std}.0', f'BBU_{window}_{int(std)}', f'bbu_{window}_{std}']
-    
-    for col in candidates:
-        if col in df.columns:
-            return col
-    return None
+    # 클래스 시작 부분에 헬퍼 메서드 추가:
+    def _find_indicator_column(self, df: pd.DataFrame, indicator: str, *params) -> str:
+        """동적으로 지표 컬럼명 찾기"""
+        if indicator == 'SMA':
+            period = params[0]
+            candidates = [f'SMA_{period}', f'sma_{period}', f'SMA{period}']
+        elif indicator == 'RSI':
+            period = params[0]
+            candidates = [f'RSI_{period}', f'rsi_{period}', f'RSI{period}']
+        elif indicator == 'BBL':
+            window, std = params
+            candidates = [f'BBL_{window}_{std}.0', f'BBL_{window}_{int(std)}', f'bbl_{window}_{std}']
+        elif indicator == 'BBU':
+            window, std = params
+            candidates = [f'BBU_{window}_{std}.0', f'BBU_{window}_{int(std)}', f'bbu_{window}_{std}']
+        
+        for col in candidates:
+            if col in df.columns:
+                return col
+        return None
 
     def generate_signal(self, historical_data: pd.DataFrame, indicator_combo: tuple, buy_params: dict, sell_params: dict, weights: dict) -> dict:
         """주어진 지표 조합과 파라미터로 신호를 생성합니다."""
