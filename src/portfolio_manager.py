@@ -102,12 +102,12 @@ class MultiCoinPortfolioManager:
                 if adjusted_trade_value < min_trade_amount:
                     logger.warning(
                         f"{symbol} 매수 취소: 최대 포지션 크기 도달 후 조정된 금액이 최소 거래 금액 미만입니다. "
-                        f"(가용 한도: ${adjusted_trade_value:,.2f}, 최소 거래액: ${min_trade_amount:,.2f})"
+                        f"(가용 한도: ₩{adjusted_trade_value:,.0f}, 최소 거래액: ₩{min_trade_amount:,.0f})"
                     )
                     return False
                 logger.info(
                     f"INFO: {symbol} 매수 수량 조정: 최대 포지션 크기 초과. "
-                    f"(요청액: ${trade_value:,.2f} -> 조정액: ${adjusted_trade_value:,.2f})"
+                    f"(요청액: ₩{trade_value:,.0f} -> 조정액: ₩{adjusted_trade_value:,.0f})"
                 )
                 # 조정된 값으로 수량, 거래액, 수수료를 다시 계산
                 quantity = adjusted_trade_value / price
@@ -117,7 +117,7 @@ class MultiCoinPortfolioManager:
 
             # 2. 현금 잔고 확인
             if self.cash < trade_value + fee:
-                logger.warning(f"{symbol} 매수 불가: 현금 부족 (필요: ${trade_value + fee:,.2f}, 보유: ${self.cash:,.2f})")
+                logger.warning(f"{symbol} 매수 불가: 현금 부족 (필요: ₩{trade_value + fee:,.0f}, 보유: ₩{self.cash:,.0f})")
                 return False
 
             # 3. 포트폴리오 업데이트 및 평균 매수 단가 재계산
@@ -168,7 +168,7 @@ class MultiCoinPortfolioManager:
 
         logger.info(
             f"거래 실행: {symbol} {'매수' if action.upper() == 'BUY' else '매도'} | "
-            f"수량: {quantity:.6f} | 가격: {price:,.2f} | 수수료: {fee:,.2f}"
+            f"수량: {quantity:.6f} | 가격: {price:,.0f} | 수수료: {fee:,.0f}"
         )
         return True
 
@@ -223,7 +223,7 @@ class MultiCoinPortfolioManager:
     def perform_rebalancing(self, prices: dict, current_time: datetime):
         """리밸런싱 로직 (execute_trade 사용)"""
         total_value = self.get_portfolio_value(prices)
-        logger.info(f"리밸런싱 시작 (포트폴리오 가치: ${total_value:,.2f})")
+        logger.info(f"리밸런싱 시작 (포트폴리오 가치: ₩{total_value:,.0f})")
 
         for sym, target_ratio in self.target_allocation.items():
             if sym == 'CASH' or prices.get(sym, 0) <= 0:

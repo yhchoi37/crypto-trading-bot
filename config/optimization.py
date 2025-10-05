@@ -51,7 +51,6 @@ class OptimizationSettings:
 
         # 전진 분석 (Walk-Forward Optimization) 설정
         self.WALK_FORWARD_CONFIG = {
-            'enabled': True,  # 전진 분석 활성화 여부
             'training_period_months': 12, # 훈련 기간 (과거 12개월 데이터로 최적화)
             'testing_period_months': 3    # 검증 기간 (이후 3개월 데이터로 성과 검증)
         }

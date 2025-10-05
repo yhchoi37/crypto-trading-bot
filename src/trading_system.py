@@ -64,7 +64,7 @@ class TechnicalAnalysisAlgorithm:
                 ma_s_col = self._find_indicator_column(df, 'SMA', ma_s_period)
                 ma_l_col = self._find_indicator_column(df, 'SMA', ma_l_period)
                 if ma_s_col and ma_l_col:
-                    log_msg_details.append(f"Buy MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.2f} vs {latest[ma_l_col]:.2f}")
+                    log_msg_details.append(f"Buy MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.0f} vs {latest[ma_l_col]:.0f}")
                     if latest[ma_s_col] > latest[ma_l_col] and previous[ma_s_col] <= previous[ma_l_col]:
                         buy_score += weights.get('MA_Cross_buy', 1)
 
@@ -74,7 +74,7 @@ class TechnicalAnalysisAlgorithm:
             if rsi_period and rsi_threshold:
                 rsi_col = self._find_indicator_column(df, 'RSI', rsi_period)
                 if rsi_col:
-                    log_msg_details.append(f"Buy RSI({rsi_period}): {latest[rsi_col]:.2f} < {rsi_threshold}?")
+                    log_msg_details.append(f"Buy RSI({rsi_period}): {latest[rsi_col]:.0f} < {rsi_threshold}?")
                     if latest[rsi_col] < rsi_threshold:
                         buy_score += weights.get('RSI_buy', 1)
 
@@ -85,7 +85,7 @@ class TechnicalAnalysisAlgorithm:
                 # bbl_col = f'BBL_{bb_window}_{bb_std}.0' 
                 bbl_col = self._find_indicator_column(df, 'BBL', bb_window, bb_std)
                 if bbl_col:
-                    log_msg_details.append(f"Buy BB({bb_window},{bb_std}): {latest['close']:.2f} < {latest[bbl_col]:.2f}?")
+                    log_msg_details.append(f"Buy BB({bb_window},{bb_std}): {latest['close']:.0f} < {latest[bbl_col]:.0f}?")
                     if latest['close'] < latest[bbl_col]:
                         buy_score += weights.get('BollingerBand_buy', 1)
 
@@ -97,7 +97,7 @@ class TechnicalAnalysisAlgorithm:
                 ma_s_col = self._find_indicator_column(df, 'SMA', ma_s_period)
                 ma_l_col = self._find_indicator_column(df, 'SMA', ma_l_period)
                 if ma_s_col and ma_l_col:
-                    log_msg_details.append(f"Sell MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.2f} vs {latest[ma_l_col]:.2f}")
+                    log_msg_details.append(f"Sell MA({ma_s_period},{ma_l_period}): {latest[ma_s_col]:.0f} vs {latest[ma_l_col]:.0f}")
                     if latest[ma_s_col] < latest[ma_l_col] and previous[ma_s_col] >= previous[ma_l_col]:
                         sell_score += weights.get('MA_Cross_sell', 1)
 
@@ -107,7 +107,7 @@ class TechnicalAnalysisAlgorithm:
             if rsi_period and rsi_threshold:
                 rsi_col = self._find_indicator_column(df, 'RSI', rsi_period)
                 if rsi_col:
-                    log_msg_details.append(f"Sell RSI({rsi_period}): {latest[rsi_col]:.2f} > {rsi_threshold}?")
+                    log_msg_details.append(f"Sell RSI({rsi_period}): {latest[rsi_col]:.0f} > {rsi_threshold}?")
                     if latest[rsi_col] > rsi_threshold:
                         sell_score += weights.get('RSI_sell', 1)
 
@@ -118,7 +118,7 @@ class TechnicalAnalysisAlgorithm:
                 # bbu_col = f'BBU_{bb_window}_{bb_std}.0'
                 bbu_col = self._find_indicator_column(df, 'BBU', bb_window, bb_std)
                 if bbu_col:
-                    log_msg_details.append(f"Sell BB({bb_window},{bb_std}): {latest['close']:.2f} > {latest[bbu_col]:.2f}?")
+                    log_msg_details.append(f"Sell BB({bb_window},{bb_std}): {latest['close']:.0f} > {latest[bbu_col]:.0f}?")
                     if latest['close'] > latest[bbu_col]:
                         sell_score += weights.get('BollingerBand_sell', 1)
 
@@ -301,7 +301,7 @@ class MultiCoinTradingSystem:
 
                         if amount_to_invest > min_trade_amount:
                             quantity = amount_to_invest / price
-                            logger.info(f"{log_prefix} {coin} 매수 실행: 수량={quantity:.6f}, 가격={price:,.2f}")
+                            logger.info(f"{log_prefix} {coin} 매수 실행: 수량={quantity:.6f}, 가격={price:,.0f}")
                             if not self.config.SIMULATION_MODE:
                                 self.portfolio_manager.execute_trade(coin, 'BUY', quantity, price)
                         else:
@@ -310,7 +310,7 @@ class MultiCoinTradingSystem:
                 elif action == 'SELL':
                     if has_position:
                         quantity_to_sell = position['quantity'] * 0.5 # 예시: 50% 매도
-                        logger.info(f"{log_prefix} {coin} 매도 실행: 수량={quantity_to_sell:.6f}, 가격={price:,.2f}")
+                        logger.info(f"{log_prefix} {coin} 매도 실행: 수량={quantity_to_sell:.6f}, 가격={price:,.0f}")
                         if not self.config.SIMULATION_MODE:
                             self.portfolio_manager.execute_trade(coin, 'SELL', quantity_to_sell, price)
 

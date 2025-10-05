@@ -1,27 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-기술적 분석 전략 최적화 실행 스크립트 (Walk-Forward Optimization)
+기술적 분석 전략 백테스팅 시스템
+- Single: 단일 파라미터 세트 테스트
+- Grid Search: 전체 기간 파라미터 최적화
+- Walk-Forward: 전진 분석 최적화
 """
 import os
 import sys
 import logging
+import argparse
 import itertools
 from datetime import datetime
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from dateutil.relativedelta import relativedelta
 import multiprocessing as mp
 import json
-import argparse
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
 from config.settings import TradingConfig
-form src.util import convert_numpy_types, report_final_backtest_results
 from src.trading_system import MultiCoinTradingSystem
 from src.data_manager import MultiCoinDataManager
-from src.logging_config import setup_logging # 공통 로깅 함수 임포트
+from src.logging_config import setup_logging
+from src.utils import convert_numpy_types, detect_multiprocessing_mode
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +100,7 @@ class BacktestRunner:
                         amount_to_invest = (target_ratio - current_ratio) * portfolio_value_before_trade
                         max_investment_per_trade = trading_system.portfolio_manager.cash * 0.1
                         final_investment = min(amount_to_invest, max_investment_per_trade)
-                        logger.debug(f"[{ts_str}][{coin}] BUY : Target({target_ratio:.2%}) > Current({current_ratio:.2%}). Attempting to invest ~${final_investment:,.2f}.")
+                        logger.debug(f"[{ts_str}][{coin}] BUY : Target({target_ratio:.2%}) > Current({current_ratio:.2%}). Attempting to invest ~₩{final_investment:,.0f}.")
                         trading_system.portfolio_manager.execute_trade(coin, 'BUY', final_investment / price, price, current_ts)
                     else:
                         logger.debug(f"[{ts_str}][{coin}] BUY IGNORED: Target({target_ratio:.2%}) <= Current({current_ratio:.2%}).")
@@ -241,8 +245,13 @@ class Optimizer:
                 temp_set.add(job_repr)
         return final_jobs
 
-    def run_optimization(self) -> dict:
-        """최적화 실행 및 최고의 전략 반환 (병렬 처리 적용)"""
+    def run_optimization(self, mode: str = 'grid') -> dict:
+        """
+        최적화 실행 및 최고의 전략 반환
+        
+        Args:
+            mode: 'grid' (그리드 서치) 또는 'walk-forward' (전진 분석의 일부)
+        """
         jobs = self._generate_jobs()
         if not jobs:
             logger.warning("생성된 최적화 작업이 없습니다.")
@@ -252,16 +261,15 @@ class Optimizer:
         core_count = self.config.optimization.PERFORMANCE_CONFIG['parallel_cores']
         if core_count == -1:
             core_count = mp.cpu_count()
-        logger.info(f"훈련 구간 내에서 {len(jobs)}개 전략 조합으로 최적화를 시작합니다. (병렬 코어: {core_count}개)")
-
+        mode_desc = "그리드 서치" if mode == 'grid' else "훈련 구간"
+        logger.info(f"{mode_desc} 내에서 {len(jobs)}개 전략 조합으로 최적화를 시작합니다. "
+                   f"(병렬 코어: {core_count}개)")
         # 각 잡에 필요한 인자들을 튜플 리스트로 준비
         job_args = [(job, self.initial_balance, self.historical_data, self.config) for job in jobs]
 
         results = []
-        # multiprocessing.Pool을 사용하여 병렬 처리
         with mp.Pool(processes=core_count) as pool:
-            # tqdm을 사용하여 진행률 표시
-            with tqdm(total=len(jobs), desc="Finding Best Params", ncols=100) as pbar:
+            with tqdm(total=len(jobs), desc=f"{mode_desc} 최적화", ncols=100) as pbar:
                 for result in pool.imap_unordered(run_backtest_job, job_args):
                     results.append(result)
                     pbar.update()
@@ -273,10 +281,136 @@ class Optimizer:
         if results_df.empty:
             return None
 
-        # 'final_value'는 이제 'summary' 딕셔너리 안에 있음
         results_df['final_value'] = results_df['summary'].apply(lambda x: x.get('final_value', 0))
         best_result = results_df.sort_values(by='final_value', ascending=False).iloc[0]
+        
+        logger.info(f"✅ 최적 전략 발견: 최종 자산 ₩{best_result['final_value']:,.0f}")
+        
         return best_result.to_dict()
+
+class GridSearchOptimizer:
+    """전체 기간에 대한 그리드 서치 최적화"""
+    def __init__(self, start_date_str: str, end_date_str: str, initial_balance: float):
+        self.start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        self.end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+        self.initial_balance = initial_balance
+        os.environ['INITIAL_BALANCE'] = str(initial_balance)
+        self.config = TradingConfig(force_mode='backtest')
+        self.data_manager = MultiCoinDataManager()
+    
+    def run(self):
+        """그리드 서치 실행"""
+        logger.info("="*80)
+        logger.info("🔍 그리드 서치 최적화 시작")
+        logger.info(f"기간: {self.start_date.date()} ~ {self.end_date.date()}")
+        logger.info("="*80)
+        
+        coins = [c for c in self.config.TARGET_ALLOCATION if c != 'CASH']
+        
+        # 전체 데이터 로드
+        all_historical_data = self.data_manager.get_historical_data_for_backtest(
+            coins, self.start_date.strftime('%Y-%m-%d'), self.end_date.strftime('%Y-%m-%d')
+        )
+        
+        if all_historical_data.empty:
+            logger.error("데이터를 로드할 수 없습니다.")
+            return
+        
+        all_historical_data['timestamp'] = pd.to_datetime(all_historical_data['index'])
+        all_historical_data = all_historical_data.set_index('timestamp')
+        
+        # 지표 사전 계산
+        all_historical_data = self._precompute_all_indicators(all_historical_data)
+        
+        # 최적화 실행
+        optimizer = Optimizer(self.initial_balance, self.config, all_historical_data)
+        best_strategy = optimizer.run_optimization(mode='grid')
+        
+        if not best_strategy:
+            logger.error("최적 전략을 찾지 못했습니다.")
+            return
+        
+        # 최적 전략으로 전체 기간 재실행 (상세 결과)
+        runner = BacktestRunner(self.initial_balance, all_historical_data, self.config)
+        final_result = runner.run(best_strategy)
+        
+        if final_result:
+            report_final_results(
+                self.start_date, self.end_date, self.initial_balance, 
+                final_result, prefix="GridSearch"
+            )
+            self._save_strategy_to_file(best_strategy)
+    
+    def _precompute_all_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+        """모든 기술적 지표 사전 계산"""
+        # ... (기존 WalkForwardOptimizer의 메서드 재사용)
+        if data.empty:
+            return data
+        
+        logger.info("전체 데이터에 대한 모든 기술적 지표의 사전 계산을 시작합니다...")
+        all_params = self._get_all_possible_params()
+        
+        data_with_indicators = []
+        for coin, group in data.groupby('coin'):
+            df = group.copy().sort_values('timestamp')
+            if all_params['ma_short_period']:
+                for p in set(all_params['ma_short_period'] + all_params['ma_long_period']):
+                    df.ta.sma(length=p, append=True)
+            if all_params['rsi_period']:
+                for p in all_params['rsi_period']:
+                    df.ta.rsi(length=p, append=True)
+            if all_params['bollinger_window']:
+                for p in all_params['bollinger_window']:
+                    for std in all_params['bollinger_std_dev']:
+                        df.ta.bbands(length=p, std=std, append=True)
+            data_with_indicators.append(df)
+        
+        logger.info("모든 기술적 지표 계산 완료.")
+        return pd.concat(data_with_indicators) if data_with_indicators else pd.DataFrame()
+    
+    def _get_all_possible_params(self) -> dict:
+        """최적화 설정에서 가능한 모든 파라미터 값을 추출"""
+        all_params = {
+            'ma_short_period': set(), 'ma_long_period': set(),
+            'rsi_period': set(), 'rsi_oversold_threshold': set(),
+            'bollinger_window': set(), 'bollinger_std_dev': set()
+        }
+        cfg = self.config.OPTIMIZATION_CONFIG
+        
+        for indicator_type in ['buy_indicators', 'sell_indicators']:
+            for _, params_config in cfg.get(indicator_type, {}).items():
+                for p_name, p_vals in params_config.items():
+                    if p_name in all_params:
+                        all_params[p_name].update(
+                            np.arange(p_vals['min'], p_vals['max'] + p_vals['step'], p_vals['step'])
+                        )
+        
+        for k in all_params:
+            all_params[k] = sorted(list(all_params[k]))
+        return all_params
+    
+    def _save_strategy_to_file(self, strategy: dict):
+        """찾아낸 최적의 전략 파라미터를 JSON 파일로 저장"""
+        if not strategy:
+            logger.warning("저장할 최적 전략이 없습니다.")
+            return
+        
+        params_to_save = {
+            'buy_indicators': strategy.get('buy_indicators', {}),
+            'sell_indicators': strategy.get('sell_indicators', {}),
+            'buy_trigger_threshold': strategy.get('buy_trigger_threshold'),
+            'sell_trigger_threshold': strategy.get('sell_trigger_threshold'),
+            'signal_weights': strategy.get('signal_weights', {})
+        }
+        
+        filepath = 'optimized_params_grid.json'
+        try:
+            params_to_save = convert_numpy_types(params_to_save)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(params_to_save, f, ensure_ascii=False, indent=4)
+            logger.info(f"✅ 그리드 서치 최적 파라미터를 '{filepath}' 파일에 저장했습니다.")
+        except Exception as e:
+            logger.error(f"❌ 파라미터 저장 중 오류: {e}", exc_info=True)
 
 class WalkForwardOptimizer:
     """전진 분석을 총괄하는 최상위 클래스"""
@@ -285,7 +419,7 @@ class WalkForwardOptimizer:
         self.end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
         self.initial_balance = initial_balance
         os.environ['INITIAL_BALANCE'] = str(initial_balance)
-        self.config = TradingConfig()
+        self.config = TradingConfig(force_mode='backtest')
         self.data_manager = MultiCoinDataManager()
         self.all_historical_data = None
         self.out_of_sample_portfolio_histories = []
@@ -341,9 +475,6 @@ class WalkForwardOptimizer:
     def run(self):
         # optimization 설정 객체에서 WALK_FORWARD_CONFIG를 가져옴
         wfc = self.config.optimization.WALK_FORWARD_CONFIG
-        if not wfc['enabled']:
-            logger.warning("전진 분석이 비활성화되어 있습니다.")
-            return
         coins = [c for c in self.config.TARGET_ALLOCATION if c != 'CASH']
         
         # 데이터 로드 및 인덱스 설정
@@ -359,13 +490,15 @@ class WalkForwardOptimizer:
         current_start = self.start_date
         total_balance = self.initial_balance
         latest_best_strategy = None # 최신 최적 전략을 저장할 변수
-
+        
+        window_count = 0
         while current_start + relativedelta(months=wfc['training_period_months']) < self.end_date:
+            window_count += 1
             train_start, train_end = current_start, current_start + relativedelta(months=wfc['training_period_months'])
             test_end = train_end + relativedelta(months=wfc['testing_period_months'])
             if test_end > self.end_date: test_end = self.end_date
 
-            logger.info(f"\n{'='*80}\n전진 분석 구간: 훈련 [{train_start.date()}-{train_end.date()}] | 검증 [{train_end.date()}-{test_end.date()}]\n{'='*80}")
+            logger.info(f"\n{'='*80}\n전진 분석#{window_count}: 훈련 [{train_start.date()}-{train_end.date()}] | 검증 [{train_end.date()}-{test_end.date()}]\n{'='*80}")
             
             train_data = self.all_historical_data[(self.all_historical_data.index >= train_start) & (self.all_historical_data.index < train_end)].copy()
             optimizer = Optimizer(total_balance, self.config, train_data)
@@ -387,7 +520,7 @@ class WalkForwardOptimizer:
                         self.out_of_sample_trade_histories.append(test_result['trade_history'])
                     
                     total_balance = test_result['summary']['final_value']
-                    logger.info(f"검증 구간 성과: 최종 자산 ${total_balance:,.2f} | 수익률 {test_result['summary']['total_return']:.2f}%")
+                    logger.info(f"검증 구간 성과: 최종 자산 ₩{total_balance:,.0f} | 수익률 {test_result['summary']['total_return']:.2f}%")
             else:
                 logger.warning("현 구간에서 유효한 전략을 찾지 못했습니다. 다음 구간으로 넘어갑니다.")
 
@@ -479,7 +612,21 @@ def precompute_indicators_for_single_run(data: pd.DataFrame, config: dict) -> pd
     return pd.concat(data_with_indicators) if data_with_indicators else pd.DataFrame()
 
 def main():
-    parser = argparse.ArgumentParser(description="백테스팅 및 최적화 실행 스크립트")
+    parser = argparse.ArgumentParser(
+        description="백테스팅 및 최적화 실행 스크립트",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+실행 모드:
+  single        : 설정 파일의 파라미터로 단일 백테스트 실행 (빠름)
+  grid          : 전체 기간에 대한 그리드 서치 최적화 (과최적화 위험)
+  walk-forward  : 전진 분석 최적화 (권장, 과최적화 방지)
+
+예시:
+  python backtest.py --mode single
+  python backtest.py --mode grid
+  python backtest.py --mode walk-forward
+        """
+    )
     parser.add_argument(
         '--mode', 
         type=str, 
@@ -499,12 +646,14 @@ def main():
     # 백테스트 모드로 명시적 설정 (자동 감지되지만 명확성을 위해)
     config = TradingConfig(force_mode='backtest')
 
-    log_filename = 'logs/backtest_single.log' if args.single else 'logs/backtest_wfo.log'
+    log_filename = f'logs/backtest_{args.mode.replace("-", "_")}.log'
     # 멀티프로세싱 사용하는지 명확히 지정
     use_mp = detect_multiprocessing_mode()
+    # use_mp = args.mode in ['grid', 'walk-forward']  # 최적화 모드에서만 멀티프로세싱
     queue_listener = setup_logging(config.LOG_LEVEL, log_filename, use_multiprocessing=use_mp)
     
     logger.info("🚀 백테스트 시스템 시작")
+    logger.info(f"📊 실행 모드: {args.mode.upper()}")
     START_DATE = "2022-01-01"
     # END_DATE = "2025-06-30"
     END_DATE = "2023-12-31"
@@ -545,8 +694,13 @@ def main():
                     result, 
                     prefix="SingleRun"
                 )
-        else:
-            logger.info("전진 분석 최적화를 시작합니다.")
+        elif args.mode == 'grid':
+            logger.info("grid-search 최적화를 시작합니다.")
+            grid_optimizer = GridSearchOptimizer(START_DATE, END_DATE, INITIAL_BALANCE)
+            grid_optimizer.run()
+        
+        elif args.mode == 'walk-forward':
+            logger.info("walk-forward 최적화를 시작합니다.")
             wfo = WalkForwardOptimizer(START_DATE, END_DATE, INITIAL_BALANCE)
             wfo.run()
     except Exception as e:
