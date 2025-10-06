@@ -3,6 +3,7 @@
 트레이딩 시스템 설정 파일
 """
 import os
+import sys
 from dotenv import load_dotenv
 import logging
 import json

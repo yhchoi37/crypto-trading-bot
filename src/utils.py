@@ -124,7 +124,7 @@ def report_final_backtest_results(start_date, end_date, initial_balance, result:
 
     logger.info(f"\n{'='*80}\n ** {prefix} 최종 백테스트 결과 **\n{'='*80}")
     logger.info(f"전체 기간: {start_date.date()} ~ {end_date.date()}")
-    logger.info(f"초기 자본: ₩{initial_balance:,.2f} | 최종 자산: ₩{summary['final_value']:,.2f}")
+    logger.info(f"초기 자본: ₩{initial_balance:,.0f} | 최종 자산: ₩{summary['final_value']:,.0f}")
     logger.info(f"총 수익률: {summary['total_return']:.2f}% | 최대 낙폭 (MDD): {summary['mdd']:.2f}%")
     logger.info("="*80)
 

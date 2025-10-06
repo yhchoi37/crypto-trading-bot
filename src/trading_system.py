@@ -148,7 +148,7 @@ class TechnicalAnalysisAlgorithm:
                 timestamp_str = str(latest.name)
 
             logger.debug(
-                f"[{timestamp_str}[{coin_symbol}] Signal Eval: "
+                f"[{timestamp_str}][{coin_symbol}] Signal Eval: "
                 f"Scores(Buy:{buy_score}/Sell:{sell_score}) | "
                 f"Triggers(Buy:{buy_trigger}/Sell:{sell_trigger}) | "
                 f"Final Action: {action} | Details: {', '.join(log_msg_details)}"

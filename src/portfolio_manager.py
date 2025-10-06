@@ -5,7 +5,7 @@
 import logging
 from datetime import datetime, timedelta
 from config.settings import TradingConfig
-from src.utils import validate_price_data, safe_divide, calculate_percentage_chang
+from src.utils import validate_price_data, safe_divide, calculate_percentage_change
 
 logger = logging.getLogger(__name__)
 

@@ -25,7 +25,7 @@ from config.settings import TradingConfig
 from src.trading_system import MultiCoinTradingSystem
 from src.data_manager import MultiCoinDataManager
 from src.logging_config import setup_logging
-from src.utils import convert_numpy_types, detect_multiprocessing_mode
+from src.utils import convert_numpy_types, detect_multiprocessing_mode, report_final_backtest_results
 
 logger = logging.getLogger(__name__)
 
@@ -335,7 +335,7 @@ class GridSearchOptimizer:
         final_result = runner.run(best_strategy)
         
         if final_result:
-            report_final_results(
+            report_final_backtest_results(
                 self.start_date, self.end_date, self.initial_balance, 
                 final_result, prefix="GridSearch"
             )
@@ -375,7 +375,7 @@ class GridSearchOptimizer:
             'rsi_period': set(), 'rsi_oversold_threshold': set(),
             'bollinger_window': set(), 'bollinger_std_dev': set()
         }
-        cfg = self.config.OPTIMIZATION_CONFIG
+        cfg = self.config.optimization.OPTIMIZATION_CONFIG
         
         for indicator_type in ['buy_indicators', 'sell_indicators']:
             for _, params_config in cfg.get(indicator_type, {}).items():
@@ -630,7 +630,7 @@ def main():
     parser.add_argument(
         '--mode', 
         type=str, 
-        default='single',
+        default='walk-forward',
         choices=['single', 'grid', 'walk-forward'],
         help='백테스트 모드 선택'
     )
@@ -664,7 +664,7 @@ def main():
     logger.info(f"💰 백테스트 초기 자본: ₩{INITIAL_BALANCE:,}")
 
     try:
-        if args.single:
+        if args.mode == 'single':
             logger.info("단일 설정 기반 백테스트를 시작합니다.")
             data_manager = MultiCoinDataManager()
             coins = [c for c in config.TARGET_ALLOCATION if c != 'CASH']
@@ -687,7 +687,7 @@ def main():
             runner = BacktestRunner(INITIAL_BALANCE, precomputed_data, config)
             result = runner.run(job_config)
             if result:
-                report_final_results(
+                report_final_backtest_results(
                     datetime.strptime(START_DATE, '%Y-%m-%d'), 
                     datetime.strptime(END_DATE, '%Y-%m-%d'), 
                     INITIAL_BALANCE, 
