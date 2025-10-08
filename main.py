@@ -9,6 +9,7 @@ import logging
 import argparse
 from datetime import datetime
 import pyupbit
+import schedule
 
 from config.settings import TradingConfig
 from src.trading_system import MultiCoinTradingSystem
@@ -81,7 +82,7 @@ class TradingBot:
             logger.info(f"✅ 거래 사이클 완료 - 포트폴리오 가치: ${result['portfolio_value']:,.2f}")
         except Exception as e:
             logger.error(f"❌ 거래 사이클 실패: {e}", exc_info=True)
-        if self.notification_manager:
+            if self.notification_manager:
                 self.notification_manager.send_alert(f"거래 사이클 오류: {e}", "ERROR")
 
     def run_rebalancing(self):

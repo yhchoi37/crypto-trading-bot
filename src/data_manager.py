@@ -74,7 +74,7 @@ class MultiCoinDataManager:
     def generate_multi_coin_data(self, coins, min_period=7):
         """여러 코인에 대한 과거 캔들 데이터 통합 DataFrame 생성 (캐싱 적용)"""
         interval = self.config.INTERVAL
-        interval_
+        # remove stray variable 'interval_' and construct cache key
         cache_key = f"ohlcv_{'_'.join(sorted(coins))}_{min_period}d"
         if self._is_cache_valid(cache_key):
             logger.debug(f"{cache_key} 캐시 사용")
@@ -88,11 +88,11 @@ class MultiCoinDataManager:
                 )
                 if df is not None:
                     df = df.reset_index()
-                df['coin'] = symbol
+                    df['coin'] = symbol
                 all_data.append(df)
                 time.sleep(0.1) # Rate Limit 방지
             except Exception as e:
-                logger.error(f"[{symbol} 데이터 수집 실패: {e}")
+                logger.error(f"[{symbol}] 데이터 수집 실패: {e}")
         if not all_data:
             return pd.DataFrame()
 

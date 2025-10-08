@@ -36,8 +36,14 @@ cd crypto-trading-bot
 
 ```bash
 python -m venv trading_env
-source trading_env/bin/activate  # Linux/Mac
-# trading_env\Scripts\activate  # Windows
+# Linux / macOS
+source trading_env/bin/activate
+
+# Windows (PowerShell)
+trading_env\Scripts\Activate.ps1
+
+# Windows (cmd.exe)
+trading_env\Scripts\activate.bat
 ```
 
 ### 4. 의존성 패키지 설치
@@ -52,7 +58,14 @@ pip install -r requirements.txt
 
 
 ```bash
+copy .env.template .env  # Windows
+# 또는 Linux/macOS
 cp .env.template .env
+
+# 편집: Windows PowerShell
+notepad .env
+
+# 편집: Linux/macOS
 nano .env  # 또는 사용하는 텍스트 에디터로 파일 열기
 ```
 

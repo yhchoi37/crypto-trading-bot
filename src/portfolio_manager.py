@@ -11,9 +11,18 @@ logger = logging.getLogger(__name__)
 
 class MultiCoinPortfolioManager:
     """다중 자산(코인+현금) 포트폴리오 할당/리밸런싱/평가"""
-    def __init__(self):
+    def __init__(self, initial_balance: float = None):
+        """MultiCoinPortfolioManager 초기화
+
+        Args:
+            initial_balance: 선택적 초기 현금 (백테스트 등에서 외부 주입 가능)
+        """
+        # Allow injecting an initial balance (useful for backtests)
         self.config = TradingConfig()
-        self.cash = self.config.INITIAL_BALANCE
+        if initial_balance is not None:
+            self.cash = initial_balance
+        else:
+            self.cash = self.config.INITIAL_BALANCE
         self.coins = {}  # {symbol: {'quantity': float, 'avg_buy_price': float}}
         self.target_allocation = self.config.TARGET_ALLOCATION
         self.trade_history = []
@@ -75,13 +84,17 @@ class MultiCoinPortfolioManager:
         
         return trade_value * fee_rate
 
-    def execute_trade(self, symbol: str, action: str, quantity: float, price: float, current_time: datetime):
+    def execute_trade(self, symbol: str, action: str, quantity: float, price: float, current_time: datetime = None):
         """중앙화된 거래 실행 및 리스크 관리"""
         if quantity <= 0 or price <= 0:
             logger.warning(f"유효하지 않은 거래 시도: {symbol} 수량={quantity}, 가격={price}")
             return False
         if not validate_price_data(price, symbol):
             return False
+
+        # normalize current_time
+        if current_time is None:
+            current_time = datetime.now()
 
         trade_value = quantity * price
         # TODO: 테이커 메이커에 따른 설정 수정
@@ -220,8 +233,11 @@ class MultiCoinPortfolioManager:
                 )
                 self.execute_trade(symbol, 'SELL', quantity, current_price, current_time)
 
-    def perform_rebalancing(self, prices: dict, current_time: datetime):
+    def perform_rebalancing(self, prices: dict, current_time: datetime = None):
         """리밸런싱 로직 (execute_trade 사용)"""
+        if current_time is None:
+            current_time = datetime.now()
+
         total_value = self.get_portfolio_value(prices)
         logger.info(f"리밸런싱 시작 (포트폴리오 가치: ₩{total_value:,.0f})")
 

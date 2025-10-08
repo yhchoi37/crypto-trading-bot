@@ -1,12 +1,18 @@
-# ðŸš€ í€µ ìŠ¤íƒ€íŠ¸ ê°€ì´ë“œ
+# QUICKSTART
 
-## 1ë‹¨ê³„: í™˜ê²½ ì„¤ì •
+## 1단계: 환경 준비
 
-### Python ê°€ìƒí™˜ê²½ ìƒì„±
+### Python 가상환경 생성
 ```bash
 python -m venv trading_env
-source trading_env/bin/activate  # Linux/Mac
-# trading_env\Scripts\activate  # Windows
+# Linux / macOS
+source trading_env/bin/activate
+
+# Windows (PowerShell)
+trading_env\Scripts\Activate.ps1
+
+# Windows (cmd.exe)
+trading_env\Scripts\activate.bat
 ```
 
 ### í•„ìˆ˜ ë¼ì´ë¸ŒëŸ¬ë¦¬ ì„¤ì¹˜
@@ -16,10 +22,19 @@ pip install -r requirements.txt
 
 ## 2ë‹¨ê³„: API í‚¤ ì„¤ì •
 
-### .env íŒŒì¼ ìƒì„±
+### .env 템플릿 복사
 ```bash
+# Windows
+copy .env.template .env
+
+# Linux/macOS
 cp .env.template .env
-nano .env  # ë˜ëŠ” í…ìŠ¤íŠ¸ ì—ë””í„°ë¡œ íŽ¸ì§‘
+
+# 편집: Windows PowerShell
+notepad .env
+
+# 편집: Linux/macOS
+nano .env
 ```
 
 ### í•„ìˆ˜ API í‚¤ (ìµœì†Œ ì„¤ì •)

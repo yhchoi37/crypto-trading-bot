@@ -166,7 +166,12 @@ class MultiCoinTradingSystem:
         """
         logger.info(f"🚀 트레이딩 시스템 초기화 - 초기 자본: ￦{initial_balance:,.0f}")
         self.config = config if config else TradingConfig()
-        self.portfolio_manager = MultiCoinPortfolioManager()
+        # Pass initial_balance to portfolio manager if available
+        try:
+            self.portfolio_manager = MultiCoinPortfolioManager(initial_balance=initial_balance)
+        except TypeError:
+            # backward compatibility: constructor may not accept parameter
+            self.portfolio_manager = MultiCoinPortfolioManager()
         self.data_manager = MultiCoinDataManager()
         self.twitter_collector = TwitterSentimentCollector()
         self.reddit_collector = RedditSentimentCollector()
