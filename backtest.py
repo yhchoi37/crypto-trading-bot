@@ -144,7 +144,30 @@ class BacktestRunner:
         drawdown = (portfolio_df['portfolio_value'] - peak) / peak.replace(0, np.nan)
         mdd = 0 if peak.iloc[-1] == 0 else drawdown.min() * 100
 
-        summary = {'total_return': total_return, 'mdd': mdd, 'final_value': final_value}
+        # 샤프비율 계산
+        returns = portfolio_df['portfolio_value'].pct_change().dropna()
+        sharpe = (returns.mean() / returns.std()) * np.sqrt(252) if returns.std() != 0 else 0
+
+        # 거래수, 승률, 평균 거래당 수익률, 손익비
+        trade_count = len(trade_df) if not trade_df.empty else 0
+        win_trades = trade_df[trade_df.get('profit', 0) > 0] if not trade_df.empty and 'profit' in trade_df.columns else pd.DataFrame()
+        lose_trades = trade_df[trade_df.get('profit', 0) <= 0] if not trade_df.empty and 'profit' in trade_df.columns else pd.DataFrame()
+        win_rate = (len(win_trades) / trade_count * 100) if trade_count > 0 else 0
+        avg_trade_return = trade_df['profit'].mean() if not trade_df.empty and 'profit' in trade_df.columns else 0
+        avg_win = win_trades['profit'].mean() if not win_trades.empty else 0
+        avg_lose = lose_trades['profit'].mean() if not lose_trades.empty else 0
+        profit_factor = abs(avg_win / avg_lose) if avg_lose != 0 else 0
+
+        summary = {
+            'total_return': total_return,
+            'mdd': mdd,
+            'final_value': final_value,
+            'sharpe_ratio': sharpe,
+            'trade_count': trade_count,
+            'win_rate': win_rate,
+            'avg_trade_return': avg_trade_return,
+            'profit_factor': profit_factor
+        }
 
         return {'summary': summary, 'portfolio_history': portfolio_df, 'trade_history': trade_df}
 
@@ -542,7 +565,12 @@ class WalkForwardOptimizer:
                         'test_end': test_end.strftime('%Y-%m-%d'),
                         'final_value': test_result['summary'].get('final_value'),
                         'total_return': test_result['summary'].get('total_return'),
-                        'mdd': test_result['summary'].get('mdd')
+                        'mdd': test_result['summary'].get('mdd'),
+                        'sharpe_ratio': test_result['summary'].get('sharpe_ratio'),
+                        'trade_count': test_result['summary'].get('trade_count'),
+                        'win_rate': test_result['summary'].get('win_rate'),
+                        'avg_trade_return': test_result['summary'].get('avg_trade_return'),
+                        'profit_factor': test_result['summary'].get('profit_factor')
                     })
             else:
                 logger.warning("현 구간에서 유효한 전략을 찾지 못했습니다. 다음 구간으로 넘어갑니다.")

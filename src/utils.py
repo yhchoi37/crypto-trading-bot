@@ -55,8 +55,8 @@ def convert_numpy_types(obj: Any) -> Any:
     return obj
 
 # ========== 백테스트 결과 출력 ==========
-def plot_backtest_results(history_df, filename):
-    """백테스트 결과를 종합 성능 차트로 저장하는 함수"""
+def plot_backtest_results(history_df, filename, summary=None):
+    """백테스트 결과를 종합 성능 차트로 저장하고, 주요 성과지표를 상단에 표기"""
     if history_df is None or history_df.empty:
         logger.warning("성과 기록 데이터가 없어 그래프를 생성할 수 없습니다.")
         return
@@ -87,7 +87,19 @@ def plot_backtest_results(history_df, filename):
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(
         4, 1, figsize=(15, 20), sharex=True, gridspec_kw={'height_ratios': [3, 2, 2, 1]}
     )
+    # 성과지표 텍스트 생성
+    metrics_text = ""
+    if summary:
+        metrics_text = (
+            f"최종 자산: ₩{summary.get('final_value',0):,.0f}\n"
+            f"총 수익률: {summary.get('total_return',0):.2f}% | 최대 낙폭(MDD): {summary.get('mdd',0):.2f}%\n"
+            f"샤프비율: {summary.get('sharpe_ratio',0):.2f} | 승률: {summary.get('win_rate',0):.2f}% | 거래수: {summary.get('trade_count',0)}\n"
+            f"평균 거래당 수익률: {summary.get('avg_trade_return',0):.2f} | 손익비: {summary.get('profit_factor',0):.2f}"
+        )
     fig.suptitle('Comprehensive Backtest Performance Analysis', fontsize=16)
+    # 성과지표 텍스트를 차트 상단에 추가
+    if metrics_text:
+        fig.text(0.5, 0.97, metrics_text, ha='center', va='top', fontsize=13, color='navy', bbox=dict(facecolor='white', alpha=0.7, boxstyle='round'))
 
     # [차트 1 포트폴리오 자산 구성
     value_cols = [f'{c}_value' for c in coins if f'{c}_value' in history_df.columns]
@@ -147,6 +159,8 @@ def report_final_backtest_results(start_date, end_date, initial_balance, result:
     logger.info(f"전체 기간: {start_date.date()} ~ {end_date.date()}")
     logger.info(f"초기 자본: ₩{initial_balance:,.0f} | 최종 자산: ₩{summary['final_value']:,.0f}")
     logger.info(f"총 수익률: {summary['total_return']:.2f}% | 최대 낙폭 (MDD): {summary['mdd']:.2f}%")
+    logger.info(f"샤프비율: {summary.get('sharpe_ratio',0):.2f} | 승률: {summary.get('win_rate',0):.2f}% | 거래수: {summary.get('trade_count',0)}")
+    logger.info(f"평균 거래당 수익률: {summary.get('avg_trade_return',0):.2f} | 손익비: {summary.get('profit_factor',0):.2f}")
     logger.info("="*80)
 
     # --- 파일 저장 로직 ---
@@ -166,7 +180,7 @@ def report_final_backtest_results(start_date, end_date, initial_balance, result:
         trade_history_df.to_csv(trade_filename, index=False)
         logger.info(f"TRADE_LOG 거래 상세 내역 저장 완료: {trade_filename}")
 
-    plot_backtest_results(portfolio_history_df, plot_filename)
+    plot_backtest_results(portfolio_history_df, plot_filename, summary=summary)
 
 # ========== 환경 감지 ==========
 def detect_multiprocessing_mode() -> bool:
