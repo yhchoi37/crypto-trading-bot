@@ -23,7 +23,7 @@ class MultiCoinPortfolioManager:
             self.cash = initial_balance
         else:
             self.cash = self.config.INITIAL_BALANCE
-        self.coins = {}  # {symbol: {'quantity': float, 'avg_buy_price': float}}
+        self.coins = {}  # {symbol: {'quantity': float, 'avg_buy_price': float, 'highest_price': float}}
         self.target_allocation = self.config.TARGET_ALLOCATION
         self.trade_history = []
         self.last_trade_times = {} # 코인별 마지막 거래 시간 기록
@@ -202,44 +202,56 @@ class MultiCoinPortfolioManager:
     def check_risk_management(self, prices: dict, current_time: datetime = None):
         if current_time is None:
             current_time = datetime.now()
-        """보유 포지션에 대한 손절/익절 조건 확인 및 실행"""
+        """보유 포지션에 대한 손절/익절/트레일링 스톱 조건 확인 및 실행"""
         rm_config = self.config.RISK_MANAGEMENT
         default_rm = rm_config.get('default', {'enabled': False})
-        # 반복 중 딕셔너리 변경을 피하기 위해 키 목록 복사
         for symbol in list(self.coins.keys()):
             position = self.coins.get(symbol)
             if not position or 'avg_buy_price' not in position:
                 continue
 
-            # 코인별 설정 가져오기 (없으면 기본 설정 사용)
             coin_rm = rm_config.get(symbol, default_rm)
-
-            # 리스크 관리가 비활성화된 경우 다음 코인으로 건너뛰기
             if not coin_rm.get('enabled', False):
                 continue
 
             stop_loss_pct = coin_rm.get('stop_loss_percent')
             take_profit_pct = coin_rm.get('take_profit_percent')
+            trailing_enabled = coin_rm.get('trailing_stop_enabled', False)
+            trailing_pct = coin_rm.get('trailing_stop_percent', None)
 
             current_price = prices.get(symbol)
             avg_buy_price = position['avg_buy_price']
             quantity = position['quantity']
-
             if not current_price or avg_buy_price <= 0:
                 continue
-            # 수익률 계산
             pnl_percent = calculate_percentage_change(avg_buy_price, current_price)
 
-            # 손절 조건 확인 (None이 아니고, 조건 충족 시)
+            # 트레일링 스톱: 최고가 기록 및 조건 체크
+            if trailing_enabled and trailing_pct is not None:
+                # 최고가 갱신
+                highest = position.get('highest_price', avg_buy_price)
+                if current_price > highest:
+                    position['highest_price'] = current_price
+                    highest = current_price
+                # 최고가 대비 하락률 계산
+                drop_from_high = (current_price - highest) / highest * 100 if highest > 0 else 0
+                if drop_from_high <= -trailing_pct * 100:
+                    logger.info(
+                        f"🚨 트레일링 스톱 실행 ({symbol}): 최고가 대비 {drop_from_high:.2f}% 하락 (트리거: -{trailing_pct*100:.2f}%)"
+                    )
+                    self.execute_trade(symbol, 'SELL', quantity, current_price, current_time)
+                    continue
+
+            # 기존 손절 조건
             if stop_loss_pct is not None and pnl_percent <= -stop_loss_pct:
                 logger.info(
                     f"🚨 손절매 실행 ({symbol}): "
                     f"수익률 {pnl_percent:.2%} (목표: -{stop_loss_pct:.2%})"
                 )
                 self.execute_trade(symbol, 'SELL', quantity, current_price, current_time)
-                continue # 손절매 실행 후에는 추가 익절 검사 없이 다음 코인으로
+                continue
 
-            # 이익 실현 조건 확인 (None이 아니고, 조건 충족 시)
+            # 기존 익절 조건
             if take_profit_pct is not None and pnl_percent >= take_profit_pct:
                 logger.info(
                     f"💰 이익 실현 실행 ({symbol}): "

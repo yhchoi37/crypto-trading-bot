@@ -26,7 +26,23 @@ class RiskManagementSettings:
                 'stop_loss_percent': 0.07,  # BTC는 손절 라인을 7%로 다르게 설정
             },
             'ETH': {
-                'enabled': False  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
+                'enabled': False,  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
+            }
+        }
+
+        # 트레일링 스톱 설정 (코인별)
+        self.TRAILING_STOP_CONFIG = {
+            'default': {
+                'enabled': False,
+                'percent': 0.05
+            },
+            'BTC': {
+                'enabled': False,
+                'percent': 0.07
+            },
+            'ETH': {
+                'enabled': False,
+                'percent': 0.05
             }
         }
 
@@ -38,7 +54,7 @@ class RiskManagementSettings:
             },
             'BTC': {
                 'enabled': True,
-                'period': 2  # 2시간
+                'period': 12
             },
             'ETH': {
                 'enabled': False
@@ -49,6 +65,8 @@ class RiskManagementSettings:
         self.POSITION_SIZING = {
             'method': 'fixed',  # 'fixed', 'kelly', 'atr_based'
             'fixed_percent': 0.15,
+            'buy_percent': 0.15,   # 매수 시 비율 (지정 시 fixed_percent 대신 사용)
+            'sell_percent': 0.10,  # 매도 시 비율 (지정 시 fixed_percent 대신 사용)
             'kelly_fraction': 0.5,  # Kelly의 절반만 사용 (보수적)
             'atr_multiplier': 2.0,
             'max_position_percent': 0.25,  # 절대 최대값
