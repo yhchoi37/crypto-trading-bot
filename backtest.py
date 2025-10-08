@@ -424,6 +424,9 @@ class WalkForwardOptimizer:
         self.all_historical_data = None
         self.out_of_sample_portfolio_histories = []
         self.out_of_sample_trade_histories = []
+        # store per-window best strategies and metadata
+        self.best_strategies = []
+        self.window_reports = []
 
     def _get_all_possible_params(self) -> dict:
         """최적화 설정에서 가능한 모든 파라미터 값을 추출"""
@@ -506,6 +509,15 @@ class WalkForwardOptimizer:
 
             if best_strategy:
                 latest_best_strategy = best_strategy # 찾은 최적 전략을 변수에 저장
+                # 저장할 윈도우별 메타/전략 정보 추가
+                self.best_strategies.append({
+                    'window': window_count,
+                    'train_start': train_start.strftime('%Y-%m-%d'),
+                    'train_end': train_end.strftime('%Y-%m-%d'),
+                    'test_start': train_end.strftime('%Y-%m-%d'),
+                    'test_end': test_end.strftime('%Y-%m-%d'),
+                    'strategy': best_strategy
+                })
                 buy_combo_str = ', '.join(best_strategy['buy_indicators'].keys())
                 sell_combo_str = ', '.join(best_strategy['sell_indicators'].keys())
                 logger.info(f"최적 전략 발견: Buy-({buy_combo_str}) | Sell-({sell_combo_str})")
@@ -521,6 +533,17 @@ class WalkForwardOptimizer:
                     
                     total_balance = test_result['summary']['final_value']
                     logger.info(f"검증 구간 성과: 최종 자산 ₩{total_balance:,.0f} | 수익률 {test_result['summary']['total_return']:.2f}%")
+                    # 윈도우별 요약 레코드
+                    self.window_reports.append({
+                        'window': window_count,
+                        'train_start': train_start.strftime('%Y-%m-%d'),
+                        'train_end': train_end.strftime('%Y-%m-%d'),
+                        'test_start': train_end.strftime('%Y-%m-%d'),
+                        'test_end': test_end.strftime('%Y-%m-%d'),
+                        'final_value': test_result['summary'].get('final_value'),
+                        'total_return': test_result['summary'].get('total_return'),
+                        'mdd': test_result['summary'].get('mdd')
+                    })
             else:
                 logger.warning("현 구간에서 유효한 전략을 찾지 못했습니다. 다음 구간으로 넘어갑니다.")
 
@@ -542,7 +565,35 @@ class WalkForwardOptimizer:
         report_final_backtest_results(
             self.start_date, self.end_date, self.initial_balance, final_result, prefix="WalkForward"
         )
+        # 저장: 모든 윈도우별 전략과 요약 저장
+        try:
+            self._save_all_strategies_to_file(self.best_strategies, self.window_reports)
+        except Exception as e:
+            logger.error(f"최적화된 윈도우별 전략 저장 중 오류: {e}", exc_info=True)
+        # 기존 단일 파일 저장(호환성 유지)
         self._save_strategy_to_file(latest_best_strategy)
+
+    def _save_all_strategies_to_file(self, strategies: list, reports: list):
+        """윈도우별 전략 리스트와 요약 보고서를 파일로 저장합니다."""
+        if not strategies:
+            logger.warning("저장할 윈도우별 전략이 없습니다.")
+            return
+        try:
+            # JSON으로 전체 전략 저장
+            filepath = 'optimized_params_walkforward.json'
+            serializable = convert_numpy_types(strategies)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(serializable, f, ensure_ascii=False, indent=4)
+            logger.info(f"✅ 전진분석 윈도우별 최적 전략을 '{filepath}'에 저장했습니다.")
+
+            # 윈도우별 요약을 CSV로 저장
+            if reports:
+                df = pd.DataFrame(reports)
+                csv_path = 'walkforward_window_report.csv'
+                df.to_csv(csv_path, index=False)
+                logger.info(f"✅ 전진분석 윈도우별 요약을 '{csv_path}'에 저장했습니다.")
+        except Exception as e:
+            logger.error(f"윈도우별 전략 저장 중 오류: {e}", exc_info=True)
 
     def _calculate_summary_stats(self, portfolio_df: pd.DataFrame, initial_balance: float) -> dict:
         """포트폴리오 이력 데이터프레임으로부터 요약 통계를 계산합니다."""

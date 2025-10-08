@@ -4,6 +4,47 @@
 """
 
 class RiskManagementSettings:
+    """리스크 관리 설정을 보관하는 클래스.
+
+    사용 예:
+        rm = RiskManagementSettings()
+        rm.RISK_MANAGEMENT
+    """
+    def __init__(self):
+        # 리스크 관리 설정 (코인별 손절/익절 및 쿨다운)
+        self.RISK_MANAGEMENT = {
+            'default': {
+                'enabled': True,
+                'stop_loss_percent': 0.05,   # 5% 손실 시 손절
+                'take_profit_percent': 0.10, # 10% 이익 시 익절
+                'daily_loss_limit': 0.03,    # 일일 3% 손실 시 거래 중단
+                'weekly_loss_limit': 0.10,   # 주간 10% 손실 시 거래 중단
+                'consecutive_loss_limit': 3,  # 연속 3회 손실 시 일시 중지
+            },
+            'BTC': {
+                'enabled': True,
+                'stop_loss_percent': 0.07,  # BTC는 손절 라인을 7%로 다르게 설정
+            },
+            'ETH': {
+                'enabled': False  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
+            }
+        }
+
+        # 거래 쿨다운 설정 (기존 RISK_MANAGEMENT의 cooldown_period를 여기로 이동)
+        self.COOLDOWN_CONFIG = {
+            'default': {
+                'enabled': True,
+                'period': 4  # 4시간 (기존 cooldown_period는 시간 단위였음)
+            },
+            'BTC': {
+                'enabled': True,
+                'period': 2  # 2시간
+            },
+            'ETH': {
+                'enabled': False
+            }
+        }
+
         # 동적 포지션 사이징
         self.POSITION_SIZING = {
             'method': 'fixed',  # 'fixed', 'kelly', 'atr_based'
@@ -29,7 +70,6 @@ class RiskManagementSettings:
         }
 
         # 코인별 변동성 임계값: 변동성이 너무 높을 때 거래를 중단
-
         self.VOLATILITY_FILTER = {
             'default': {
                 'enabled': True,

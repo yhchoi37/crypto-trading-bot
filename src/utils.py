@@ -21,16 +21,37 @@ logger = logging.getLogger(__name__)
 # ========== 데이터 타입 변환 ==========
 def convert_numpy_types(obj: Any) -> Any:
     """Numpy 타입을 JSON 직렬화 가능한 파이썬 기본 타입으로 변환"""
-    if isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
+    # numpy scalar types
+    try:
+        if hasattr(np, 'integer') and isinstance(obj, np.integer):
+            return int(obj)
+        if hasattr(np, 'floating') and isinstance(obj, np.floating):
+            return float(obj)
+        if hasattr(np, 'bool_') and isinstance(obj, np.bool_):
+            return bool(obj)
+        if hasattr(np, 'ndarray') and isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except Exception:
+        # 안전 장치: numpy가 부분적으로 존재하는 테스트 스텁 환경에서도 실패하지 않도록 함
+        pass
+
+    # pandas types
+    try:
+        import pandas as _pd
+        if isinstance(obj, _pd.Timestamp):
+            return obj.strftime('%Y-%m-%dT%H:%M:%S')
+        if isinstance(obj, _pd.Series):
+            return obj.apply(convert_numpy_types).tolist()
+        if isinstance(obj, _pd.DataFrame):
+            return obj.to_dict(orient='records')
+    except Exception:
+        pass
+
+    if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):
         return [convert_numpy_types(i) for i in obj]
+
     return obj
 
 # ========== 백테스트 결과 출력 ==========

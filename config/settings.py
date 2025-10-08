@@ -4,10 +4,16 @@
 """
 import os
 import sys
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    # allow running without python-dotenv installed (tests / CI without env file)
+    def load_dotenv(*args, **kwargs):
+        return None
 import logging
 import json
-from .optimization import OptimizationSettings # optimization 설정 import
+from .optimization import OptimizationSettings
+from .risk_management import RiskManagementSettings
 load_dotenv()
 logger = logging.getLogger(__name__)
 
@@ -20,7 +26,7 @@ class TradingConfig:
                        None이면 자동 감지
         """
         # 설정 버전 관리
-        self.CONFIG_VERSION = '0.2.0'
+        self.CONFIG_VERSION = '0.3.0'
         self.MIN_COMPATIBLE_VERSION = '0.2.0'
         
         # ========== 실행 모드 자동 감지 ==========
@@ -97,39 +103,28 @@ class TradingConfig:
             'taker_fee_percent': 0.001,    # 테이커 수수료
         }
 
-        # 리스크 관리 설정 (코인별 손절/익절 및 쿨다운)
-        self.RISK_MANAGEMENT = {
-            'default': {
-                'enabled': True,
-                'stop_loss_percent': 0.05,   # 5% 손실 시 손절
-                'take_profit_percent': 0.10, # 10% 이익 시 익절
-                'daily_loss_limit': 0.03,    # 일일 3% 손실 시 거래 중단
-                'weekly_loss_limit': 0.10,   # 주간 10% 손실 시 거래 중단
-                'consecutive_loss_limit': 3,  # 연속 3회 손실 시 일시 중지
-            },
-            'BTC': {
-                'enabled': True,
-                'stop_loss_percent': 0.07,  # BTC는 손절 라인을 7%로 다르게 설정
-            },
-            'ETH': {
-                'enabled': False  # ETH는 손절/익절 및 쿨다운을 적용하지 않음
+        # 리스크 관리 설정은 외부 모듈(config/risk_management.py)에 정의되어 있음.
+        try:
+            rm = RiskManagementSettings()
+            # 주요 설정을 TradingConfig에 노출
+            self.RISK_MANAGEMENT = rm.RISK_MANAGEMENT
+            self.COOLDOWN_CONFIG = rm.COOLDOWN_CONFIG
+            self.POSITION_SIZING = rm.POSITION_SIZING
+            self.TRADING_HOUR = rm.TRADING_HOUR
+            self.DRAWDOWN_CONFIG = rm.DRAWDOWN_CONFIG
+            self.VOLATILITY_FILTER = rm.VOLATILITY_FILTER
+            logger.info("✅ config/risk_management.py에서 리스크 설정을 로드했습니다.")
+        except Exception as e:
+            # 실패 시 기존 기본값을 사용하도록 하여 backward compatibility 유지
+            logger.warning(f"리스크 설정 로드 실패: {e}. 기본값을 사용합니다.")
+            self.RISK_MANAGEMENT = {
+                'default': {
+                    'enabled': True,
+                    'stop_loss_percent': 0.05,
+                    'take_profit_percent': 0.10
+                }
             }
-        }
-
-        # 거래 쿨다운 설정 (기존 RISK_MANAGEMENT의 cooldown_period를 여기로 이동)
-        self.COOLDOWN_CONFIG = {
-            'default': {
-                'enabled': True,
-                'period': 4  # 4시간 (기존 cooldown_period는 시간 단위였음)
-            },
-            'BTC': {
-                'enabled': True,
-                'period': 2  # 2시간
-            },
-            'ETH': {
-                'enabled': False
-            }
-        }
+            self.COOLDOWN_CONFIG = {'default': {'enabled': True, 'period': 4}}
 
         # 시간 단위 설정
         # pyupbit : month, week, day, minute240, minute60,30,15,10,5,3,1
@@ -277,12 +272,93 @@ class TradingConfig:
             )
 
         # 4. 리스크 관리 설정 검증
+        # 4. 리스크 관리 설정 검증
+        # - 각 코인 키는 SUPPORTED_COINS에 포함되어야 함
+        # - 각 설정은 dict여야 하며, stop_loss_percent, take_profit_percent 등은 0~1 범위
         for coin, settings in self.RISK_MANAGEMENT.items():
             if coin == 'default':
+                if not isinstance(settings, dict):
+                    raise ValueError("'default' 리스크 관리 설정은 딕셔너리여야 합니다.")
                 continue
             if coin not in self.SUPPORTED_COINS:
                 raise ValueError(f"리스크 관리에 설정된 '{coin}'은(는) 지원하는 코인이 아닙니다.")
             if not isinstance(settings, dict):
                 raise ValueError(f"'{coin}'의 리스크 관리 설정이 올바른 형식이 아닙니다 (딕셔너리 필요).")
+            # optional keys check
+            sl = settings.get('stop_loss_percent')
+            tp = settings.get('take_profit_percent')
+            if sl is not None and not (0 <= float(sl) <= 1):
+                raise ValueError(f"{coin} stop_loss_percent 값은 0~1 범위여야 합니다: {sl}")
+            if tp is not None and not (0 <= float(tp) <= 1):
+                raise ValueError(f"{coin} take_profit_percent 값은 0~1 범위여야 합니다: {tp}")
+
+        # 4b. COOLDOWN_CONFIG 검증
+        if not isinstance(self.COOLDOWN_CONFIG, dict):
+            raise ValueError('COOLDOWN_CONFIG는 딕셔너리여야 합니다.')
+        for coin, cfg in self.COOLDOWN_CONFIG.items():
+            if not isinstance(cfg, dict):
+                raise ValueError(f'COOLDOWN_CONFIG[{coin}]는 딕셔너리여야 합니다.')
+            period = cfg.get('period')
+            if cfg.get('enabled', False) and (period is None or int(period) < 0):
+                raise ValueError(f'COOLDOWN_CONFIG[{coin}].period는 0 이상의 정수여야 합니다.')
+
+        # 4c. POSITION_SIZING 검증
+        if not hasattr(self, 'POSITION_SIZING'):
+            logger.warning('POSITION_SIZING 설정이 없습니다. 기본값을 사용합니다.')
+            self.POSITION_SIZING = {'method': 'fixed', 'fixed_percent': 0.15}
+        else:
+            ps = self.POSITION_SIZING
+            if not isinstance(ps, dict):
+                raise ValueError('POSITION_SIZING는 딕셔너리여야 합니다.')
+            method = ps.get('method', 'fixed')
+            if method not in ('fixed', 'kelly', 'atr_based'):
+                raise ValueError("POSITION_SIZING.method는 'fixed'|'kelly'|'atr_based' 중 하나여야 합니다.")
+            fixed_pct = ps.get('fixed_percent', 0.0)
+            if method == 'fixed' and not (0 <= float(fixed_pct) <= 1):
+                raise ValueError('POSITION_SIZING.fixed_percent는 0~1 범위여야 합니다.')
+
+        # 4d. DRAWDOWN_CONFIG 검증
+        if not hasattr(self, 'DRAWDOWN_CONFIG'):
+            logger.warning('DRAWDOWN_CONFIG 설정이 없습니다. 기본값을 사용합니다.')
+            self.DRAWDOWN_CONFIG = {'max_drawdown_percent': 0.2, 'warning_threshold': 0.15}
+        else:
+            dd = self.DRAWDOWN_CONFIG
+            if not isinstance(dd, dict):
+                raise ValueError('DRAWDOWN_CONFIG는 딕셔너리여야 합니다.')
+            md = dd.get('max_drawdown_percent')
+            wt = dd.get('warning_threshold')
+            if md is not None and not (0 <= float(md) <= 1):
+                raise ValueError('DRAWDOWN_CONFIG.max_drawdown_percent는 0~1 범위여야 합니다.')
+            if wt is not None and not (0 <= float(wt) <= 1):
+                raise ValueError('DRAWDOWN_CONFIG.warning_threshold는 0~1 범위여야 합니다.')
+
+        # 4e. TRADING_HOUR 검증
+        if not hasattr(self, 'TRADING_HOUR'):
+            logger.warning('TRADING_HOUR 설정이 없습니다. 기본값을 사용합니다.')
+            self.TRADING_HOUR = {'enabled': False}
+        else:
+            th = self.TRADING_HOUR
+            if not isinstance(th, dict):
+                raise ValueError('TRADING_HOUR는 딕셔너리여야 합니다.')
+            if th.get('enabled', False):
+                ah = th.get('allowed_hours')
+                if not isinstance(ah, (list, tuple)):
+                    raise ValueError('TRADING_HOUR.allowed_hours는 리스트/튜플의 (start,end) 쌍이어야 합니다.')
+
+        # 4f. VOLATILITY_FILTER 검증
+        if not hasattr(self, 'VOLATILITY_FILTER'):
+            logger.warning('VOLATILITY_FILTER 설정이 없습니다. 기본값을 사용합니다.')
+            self.VOLATILITY_FILTER = {'default': {'enabled': False}}
+        else:
+            vf = self.VOLATILITY_FILTER
+            if not isinstance(vf, dict):
+                raise ValueError('VOLATILITY_FILTER는 딕셔너리여야 합니다.')
+            for coin, vfcfg in vf.items():
+                if not isinstance(vfcfg, dict):
+                    raise ValueError(f'VOLATILITY_FILTER[{coin}]는 딕셔너리여야 합니다.')
+                if vfcfg.get('enabled', False):
+                    atr = vfcfg.get('atr_threshold')
+                    if atr is None or float(atr) < 0:
+                        raise ValueError(f'VOLATILITY_FILTER[{coin}].atr_threshold는 0 이상의 숫자여야 합니다.')
         logger.info("✅ 설정 파일 유효성 검사 완료")
 
