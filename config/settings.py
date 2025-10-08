@@ -98,7 +98,6 @@ class TradingConfig:
             'buy_threshold': 0.6,
             'sell_threshold': 0.6,
             'min_trade_amount': 5000,
-            'max_slippage': 0.002,          # 0.2% 슬리피지
             'maker_fee_percent': 0.0005,   # 메이커 수수료
             'taker_fee_percent': 0.001,    # 테이커 수수료
         }
@@ -160,6 +159,7 @@ class TradingConfig:
             self.BACKTEST_SPECIFIC = {
                 'commission_model': 'percentage',
                 'slippage_model': 'fixed',
+                'max_slippage': 0.002,          # 0.2% 슬리피지 (백테스트 전용)
                 'use_bid_ask_spread': True
             }
             

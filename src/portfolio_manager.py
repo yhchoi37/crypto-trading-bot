@@ -85,7 +85,7 @@ class MultiCoinPortfolioManager:
         return trade_value * fee_rate
 
     def execute_trade(self, symbol: str, action: str, quantity: float, price: float, current_time: datetime = None):
-        """중앙화된 거래 실행 및 리스크 관리"""
+        """중앙화된 거래 실행 및 리스크 관리 (백테스트 모드일 때만 슬리피지 적용)"""
         if quantity <= 0 or price <= 0:
             logger.warning(f"유효하지 않은 거래 시도: {symbol} 수량={quantity}, 가격={price}")
             return False
@@ -95,6 +95,20 @@ class MultiCoinPortfolioManager:
         # normalize current_time
         if current_time is None:
             current_time = datetime.now()
+
+        # 슬리피지 적용 (백테스트 모드에서만)
+        slippage = 0.0
+        try:
+            if hasattr(self.config, 'IS_BACKTEST_MODE') and self.config.IS_BACKTEST_MODE:
+                slippage = self.config.BACKTEST_SPECIFIC.get('max_slippage', 0.0)
+        except Exception:
+            pass
+        # 매수/매도에 따라 가격 조정
+        if slippage > 0:
+            if action.upper() == 'BUY':
+                price = price * (1 + slippage)
+            elif action.upper() == 'SELL':
+                price = price * (1 - slippage)
 
         trade_value = quantity * price
         # TODO: 테이커 메이커에 따른 설정 수정
