@@ -11,7 +11,7 @@ class OptimizationSettings:
             # 1. 매수/매도에 사용할 기술 지표와 파라미터 범위 정의
             'buy_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 12, 'max': 24, 'step': 12},
+                    'ma_short_period': {'min': 24, 'max': 48, 'step': 12},
                     'ma_long_period': {'min': 48, 'max': 96, 'step': 24}
                 },
                 # 'RSI': {
@@ -25,17 +25,17 @@ class OptimizationSettings:
             },
             'sell_indicators': {
                 'MA_Cross': {
-                    'ma_short_period': {'min': 12, 'max': 24, 'step': 12},
-                    'ma_long_period': {'min': 48, 'max': 96, 'step': 24}
+                    'ma_short_period': {'min': 12, 'max': 12, 'step': 12},
+                    'ma_long_period': {'min': 96, 'max': 96, 'step': 24}
                 },
                 # 'RSI': {
                 #     'rsi_period': {'min': 14, 'max': 28, 'step': 7},
                 #     'rsi_overbought_threshold': {'min': 65, 'max': 75, 'step': 5}
                 # },
-                # 'BollingerBand': {
-                #     'bollinger_window': {'min': 20, 'max': 20, 'step': 5},
-                #     'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
-                # }
+                'BollingerBand': {
+                    'bollinger_window': {'min': 12, 'max': 24, 'step': 12},
+                    'bollinger_std_dev': {'min': 2, 'max': 3, 'step': 1}
+                }
             },
 
             # 2. 매수/매도 신호 발생을 위한 가중치 합계 임계값 범위
